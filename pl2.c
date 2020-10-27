@@ -1,5 +1,6 @@
 #include "pl2.h"
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,11 +65,39 @@ pl2_MString pl2_mString(pl2_MContext *context, const char *string) {
   if (impl->buckets[bucket] == NULL) {
     impl->buckets[bucket] = newHashMapItem(string);
     return bucket * 40960 + 1;
-  } else if (impl->buckets[bucket]->next == NULL) {
-    /* TODO not implemented */
+  } else if (strcmp(string, impl->buckets[bucket]->value) == 0) {
+    return bucket * 40960 + 1;
+  } else {
+    HashMapItem *prevItem = impl->buckets[bucket];
+    HashMapItem *curItem = prevItem->next;
+
+    uint32_t idx = 2;
+    while (curItem != NULL) {
+      if (strcmp(string, curItem->value) == 0) {
+        return bucket * 40960 + idx;
+      }
+      prevItem = curItem;
+      curItem = curItem->next;
+      idx += 1;
+    }
+
+    prevItem->next = nweHashmapItem(string);
+    return bucket * 40960 + idx;
   }
 }
 
 const char *pl2_getString(pl2_MContext *context, pl2_MString mstring) {
-  /* TODO not implemented */
+  uint32_t bucket = mstring / 40960;
+  uint32_t idx = mstring % 40960;
+  
+  uint32_t i = 1;
+  HashMapItem *item = impl->buckets[bucket];
+  
+  while (i < idx) {
+    i += 1;
+    item = item->next;
+    assert(item != NULL);
+  }
+  
+  return item->value;
 }
