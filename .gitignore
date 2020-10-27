@@ -1,0 +1,4 @@
+*.h.gch
+*.o
+pl2
+pl2.exe

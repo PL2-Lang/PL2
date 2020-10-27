@@ -1,7 +1,7 @@
 #ifndef PLAPI_PL2_H
 #define PLAPI_PL2_H
 
-#define PLAPI(X)
+#define PLAPI
 
 #include <stdint.h>
 
@@ -23,33 +23,43 @@ typedef struct st_pl2_source_info {
   uint16_t line;
 } pl2_SourceInfo;
 
-typedef struct st_pl2_command_part {
+pl2_SourceInfo pl2_sourceInfo(const char *fileName, uint16_t line);
+
+typedef struct st_pl2_cmd_part {
   const char *prefix;
   const char *body;
-} pl2_CommandPart;
+} pl2_CmdPart;
+
+pl2_CmdPart pl2_cmdPart(const char *prefix, const char *body);
 
 #define PL2_EMPTY_PART(part) ((part)->body == 0 && (part)->prefix == 0)
 
-typedef struct st_pl2_command {
-  struct st_pl2_command *prev;
-  struct st_pl2_command *next;
+typedef struct st_pl2_cmd {
+  struct st_pl2_cmd *prev;
+  struct st_pl2_cmd *next;
 
   void *extraData;
-  pl2_CommandPart parts[0];
-} pl2_Command;
+  pl2_CmdPart parts[0];
+} pl2_Cmd;
+
+pl2_Cmd *pl2_cmd(pl2_CmdPart *parts);
+pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
+                  pl2_Cmd *next,
+                  void *extraData,
+                  pl2_CmdPart *parts);
 
 typedef struct st_pl2_program {
   const char *language;
   const char *libName;
-  pl2_Command *commands;
+  pl2_Cmd *commands;
 
   void *extraData;
 } pl2_Program;
 
 typedef void (pl2_SInvokeFuncStub)(const char *strings[], uint16_t n);
-typedef pl2_Command* (pl2_PCallFuncStub)(pl2_Program *program,
-                                         void *context,
-                                         pl2_Command *command);
+typedef pl2_Cmd* (pl2_PCallFuncStub)(pl2_Program *program,
+                                     void *context,
+                                     pl2_Cmd *command);
 
 typedef struct st_pl2_sinvoke_func {
   pl2_MString funcName;
@@ -67,7 +77,7 @@ typedef struct st_pl2_context {
   pl2_Program program;
   pl2_MContext *mContext;
 
-  pl2_Command *currentCommand;
+  pl2_Cmd *currentCommand;
   pl2_SInvokeFunc *sinvokeFuncs;
   pl2_PCallFunc *pcallFuncs;
   pl2_PCallFuncStub *fallback;

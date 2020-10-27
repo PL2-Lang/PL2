@@ -35,7 +35,7 @@ static HashMapItem *newHashMapItem(const char *value) {
 
 #define HASH_BUCKETS 4096
 typedef struct st_mcontext_impl {
-  HashMapItem buckets[HASH_BUCKETS];
+  HashMapItem *buckets[HASH_BUCKETS];
 } MContextImpl;
 
 pl2_MContext *pl2_mContext() {
@@ -46,7 +46,7 @@ pl2_MContext *pl2_mContext() {
 
 void pl2_mContextFree(pl2_MContext *context) {
   MContextImpl *impl = (MContextImpl*)context;
-  for (size_t i = 0; i < HASH_BUCKETS; i++) {
+  for (uint32_t i = 0; i < HASH_BUCKETS; i++) {
     HashMapItem *item = impl->buckets[i];
     while (item != NULL) {
       HashMapItem *nextItem = item->next;
@@ -81,12 +81,14 @@ pl2_MString pl2_mString(pl2_MContext *context, const char *string) {
       idx += 1;
     }
 
-    prevItem->next = nweHashmapItem(string);
+    prevItem->next = newHashMapItem(string);
     return bucket * 40960 + idx;
   }
 }
 
 const char *pl2_getString(pl2_MContext *context, pl2_MString mstring) {
+  MContextImpl *impl = (MContextImpl*)context;
+  
   uint32_t bucket = mstring / 40960;
   uint32_t idx = mstring % 40960;
   
@@ -100,4 +102,44 @@ const char *pl2_getString(pl2_MContext *context, pl2_MString mstring) {
   }
   
   return item->value;
+}
+
+/*** ------------------- Some toolkit functions -------------------- ***/
+
+pl2_SourceInfo pl2_sourceInfo(const char *fileName, uint16_t line) {
+  pl2_SourceInfo ret;
+  ret.fileName = fileName;
+  ret.line = line;
+  return ret;
+}
+
+pl2_CmdPart pl2_cmdPart(const char *prefix, const char *body) {
+  pl2_CmdPart ret;
+  ret.prefix = prefix;
+  ret.body = body;
+  return ret;
+}
+
+pl2_Cmd *pl2_cmd(pl2_CmdPart *parts) {
+  return pl2_cmd4(NULL, NULL, NULL, parts);
+}
+
+pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
+                  pl2_Cmd *next,
+                  void *extraData,
+                  pl2_CmdPart *parts) {
+  uint32_t partCount = 0;
+  for (pl2_CmdPart *part = parts;
+       !PL2_EMPTY_PART(part);
+       part++, partCount++);
+  pl2_Cmd *ret = (pl2_Cmd*)malloc(sizeof(pl2_Cmd) +
+                                  (partCount+1) * sizeof(pl2_CmdPart));
+  ret->prev = prev;
+  ret->next = next;
+  ret->extraData = extraData;
+  for (uint32_t i = 0; i < partCount; i++) {
+    ret->parts[i] = parts[i];
+  }
+  memset(ret->parts + partCount, 0, sizeof(pl2_CmdPart));
+  return ret;
 }
