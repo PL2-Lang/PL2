@@ -1,6 +1,7 @@
 #include "pl2.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,7 +120,7 @@ pl2_CmdPart pl2_cmdPart(const char *prefix, const char *body) {
   ret.body = body;
   return ret;
 }
-
+start:
 pl2_Cmd *pl2_cmd(pl2_CmdPart *parts) {
   return pl2_cmd4(NULL, NULL, NULL, parts);
 }
@@ -143,3 +144,41 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
   memset(ret->parts + partCount, 0, sizeof(pl2_CmdPart));
   return ret;
 }
+
+/*** ----------------- Implementation of pl2_parse ----------------- ***/
+
+typedef struct st_parse_context {
+  pl2_Program program;
+  pl2_Cmd *listTail;
+  
+  char *src;
+  uint32_t srcIdx;
+  uint16_t line, col;
+  
+  uint32_t partBufferSize;
+  uint32_t partUsage;
+  pl2_CmdPart partBuffer[0];
+} ParseContext;
+
+static ParseContext *createParseContext(char *source);
+
+pl2_Program pl2_parse(char *source) {
+  pl2_Program ret;
+  ret->language = NULL;
+  ret->libName = NULL;
+  ret->commands = NULL;
+  ret->extraData = NULL;
+  
+  pl2_Cmd *listTail = NULL;
+  pl2_Cmd *thisCmd = NULL;
+  static pl2_CmdPart partBuf[512];
+  uint32_t thisPart = 0;
+  uint32_t srcIdx = 0;
+  uint16_t line = 1, col = 0;
+}
+
+
+
+
+
+
