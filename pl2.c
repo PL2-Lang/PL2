@@ -21,9 +21,17 @@ pl2_Slice pl2_slice(const char *start, const char *end) {
   return ret;
 }
 
+pl2_Slice pl2_nullSlice(void) {
+  pl2_Slice ret;
+  ret.start = NULL;
+  ret.end = NULL;
+  return ret;
+}
+
 pl2_Slice pl2_sliceFromCStr(const char *cStr) {
   const char *cStrEnd = cStr;
   while (*cStrEnd++ != '\0');
+  return pl2_slice(cStr, cStrEnd);
 }
 
 _Bool pl2_sliceCmp(pl2_Slice s1, pl2_Slice s2) {
@@ -55,6 +63,10 @@ _Bool pl2_sliceCmpCStr(pl2_Slice slice, const char *cStr) {
 size_t pl2_sliceLen(pl2_Slice slice) {
   assert(slice.end >= slice.start);
   return slice.end - slice.start;
+}
+
+_Bool pl2_isNullSlice(pl2_Slice slice) {
+  return slice.start == slice.end;
 }
 
 /*** ---------------- Implementation of pl2_MString ---------------- ***/
@@ -192,7 +204,7 @@ pl2_SourceInfo pl2_sourceInfo(const char *fileName, uint16_t line) {
   return ret;
 }
 
-pl2_CmdPart pl2_cmdPart(const char *prefix, const char *body) {
+pl2_CmdPart pl2_cmdPart(pl2_Slice prefix, pl2_Slice body) {
   pl2_CmdPart ret;
   ret.prefix = prefix;
   ret.body = body;
@@ -223,6 +235,12 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
   return ret;
 }
 
+void pl2_initProgram(pl2_Program *program) {
+  program->language = pl2_nullSlice();
+  program->commands = NULL;
+  program->extraData = NULL;
+}
+
 /*** ----------------- Implementation of pl2_parse ----------------- ***/
 
 typedef enum e_parse_mode {
@@ -250,9 +268,29 @@ typedef struct st_parse_context {
   pl2_CmdPart partBuffer[0];
 } ParseContext;
 
+static ParseContext *createParseContext(char *src);
 
+pl2_Program pl2_parse(char *source, pl2_Error *error);
 
+static ParseContext *createParseContext(char *src) {
+  ParseContext *ret = (ParseContext*)malloc(
+    sizeof(ParseContext) + 512 * sizeof(pl2_CmdPart)
+  );
 
+  pl2_initProgram(&ret->program);
+
+  ret->listTail = NULL;
+  ret->src = src;
+  ret->srcIdx = 0;
+  ret->line = 0;
+  ret->col = 0;
+  ret->mode = PARSE_SINGLE_LINE;
+  
+  ret->partBufferSize = 512;
+  ret->partUsage = 0;
+  
+  return ret;
+}
 
 
 

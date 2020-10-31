@@ -16,10 +16,12 @@ typedef struct st_pl2_slice {
 } pl2_Slice;
 
 pl2_Slice pl2_slice(const char *start, const char *end);
+pl2_Slice pl2_nullSlice(void);
 pl2_Slice pl2_sliceFromCStr(const char *cStr);
 _Bool pl2_sliceCmp(pl2_Slice s1, pl2_Slice s2);
 _Bool pl2_sliceCmpCStr(pl2_Slice slice, const char *cStr);
 size_t pl2_sliceLen(pl2_Slice slice);
+_Bool pl2_isNullSlice(pl2_Slice slice);
 
 typedef uint32_t pl2_MString;
 typedef struct st_m_context {
@@ -55,13 +57,14 @@ typedef struct st_pl2_source_info {
 pl2_SourceInfo pl2_sourceInfo(const char *fileName, uint16_t line);
 
 typedef struct st_pl2_cmd_part {
-  const char *prefix;
-  const char *body;
+  pl2_Slice prefix;
+  pl2_Slice body;
 } pl2_CmdPart;
 
-pl2_CmdPart pl2_cmdPart(const char *prefix, const char *body);
+pl2_CmdPart pl2_cmdPart(pl2_Slice prefix, pl2_Slice body);
 
-#define PL2_EMPTY_PART(part) ((part)->body == 0 && (part)->prefix == 0)
+#define PL2_EMPTY_PART(part) \
+  (pl2_isNullSlice((part)->prefix) && pl2_isNullSlice((part)->body))
 
 typedef struct st_pl2_cmd {
   struct st_pl2_cmd *prev;
@@ -78,10 +81,12 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
                   pl2_CmdPart *parts);
 
 typedef struct st_pl2_program {
-  const char *language;
+  pl2_Slice language;
   pl2_Cmd *commands;
   void *extraData;
 } pl2_Program;
+
+void pl2_initProgram(pl2_Program *program);
 
 typedef void (pl2_SInvokeFuncStub)(const char *strings[], uint16_t n);
 typedef pl2_Cmd* (pl2_PCallFuncStub)(pl2_Program *program,
