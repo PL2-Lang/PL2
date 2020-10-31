@@ -3,20 +3,49 @@
 
 #define PLAPI
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+typedef struct st_pl2_slice {
+  const char *start;
+  const char *end;
+} pl2_Slice;
+
+pl2_Slice pl2_slice(const char *start, const char *end);
+pl2_Slice pl2_sliceFromCStr(const char *cStr);
+_Bool pl2_sliceCmp(pl2_Slice s1, pl2_Slice s2);
+_Bool pl2_sliceCmpCStr(pl2_Slice slice, const char *cStr);
+size_t pl2_sliceLen(pl2_Slice slice);
+
 typedef uint32_t pl2_MString;
 typedef struct st_m_context {
 } pl2_MContext;
 
-pl2_MContext *pl2_mContext();
+pl2_MContext *pl2_mContext(void);
 void pl2_mContextFree(pl2_MContext *context);
 pl2_MString pl2_mString(pl2_MContext *context, const char *string);
 const char *pl2_getString(pl2_MContext *context, pl2_MString mstring);
+
+typedef struct st_pl2_error {
+  void *extraData;
+  uint16_t errorCode;
+  char reason[0];
+} pl2_Error;
+
+pl2_Error *pl2_error(uint16_t errorCode,
+                     const char *reason,
+                     void *extraData);
+
+pl2_Error *pl2_errorBuffer(size_t strBufferSize);
+
+void pl2_fillError(pl2_Error *error,
+                   uint16_t errorCode,
+                   const char *reason,
+                   void *extraData);
 
 typedef struct st_pl2_source_info {
   const char *fileName;
@@ -50,9 +79,7 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
 
 typedef struct st_pl2_program {
   const char *language;
-  const char *libName;
   pl2_Cmd *commands;
-
   void *extraData;
 } pl2_Program;
 
@@ -84,9 +111,9 @@ typedef struct st_pl2_context {
   void *context;
 } pl2_Context;
 
-pl2_Program pl2_parse(char *source);
-pl2_Context pl2_loadLanguage(pl2_Program program);
-void pl2_run(pl2_Context *program);
+pl2_Program pl2_parse(char *source, pl2_Error *error);
+pl2_Context pl2_loadLanguage(pl2_Program program, pl2_Error *error);
+void pl2_run(pl2_Context *program, pl2_Error *error);
 
 #ifdef __cplusplus
 } /* extern "C" */

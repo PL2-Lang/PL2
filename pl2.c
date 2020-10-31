@@ -7,6 +7,56 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*** ----------------- Implementation of pl2_Slice ----------------- ***/
+
+pl2_Slice pl2_slice(const char *start, const char *end) {
+  pl2_Slice ret;
+  if (start == end) {
+    ret.start = NULL;
+    ret.end = NULL;
+  } else {
+    ret.start = start;
+    ret.end = end;
+  }
+  return ret;
+}
+
+pl2_Slice pl2_sliceFromCStr(const char *cStr) {
+  const char *cStrEnd = cStr;
+  while (*cStrEnd++ != '\0');
+}
+
+_Bool pl2_sliceCmp(pl2_Slice s1, pl2_Slice s2) {
+  if (s1.start == s2.start && s1.end == s2.end) {
+    return 1;
+  } else {
+    size_t s1Len = pl2_sliceLen(s1);
+    size_t s2Len = pl2_sliceLen(s2);
+    if (s1Len == s2Len) {
+      return !strncmp(s1.start, s2.start, s1Len);
+    } else {
+      return 0;
+    }
+  }
+}
+
+_Bool pl2_sliceCmpCStr(pl2_Slice slice, const char *cStr) {
+  for (const char *it = slice.start; it != slice.end; it++, cStr++) {
+    if (*it != *cStr) {
+      return 0;
+    }
+  }
+  if (*cStr != '\0') {
+    return 0;
+  }
+  return 1;
+}
+
+size_t pl2_sliceLen(pl2_Slice slice) {
+  assert(slice.end >= slice.start);
+  return slice.end - slice.start;
+}
+
 /*** ---------------- Implementation of pl2_MString ---------------- ***/
 
 static uint32_t BKDRHash(const char *str) {
@@ -39,7 +89,7 @@ typedef struct st_mcontext_impl {
   HashMapItem *buckets[HASH_BUCKETS];
 } MContextImpl;
 
-pl2_MContext *pl2_mContext() {
+pl2_MContext *pl2_mContext(void) {
   MContextImpl *impl = (MContextImpl*)malloc(sizeof(MContextImpl));
   memset(impl, 0, sizeof(MContextImpl));
   return (pl2_MContext*)impl;
@@ -101,8 +151,36 @@ const char *pl2_getString(pl2_MContext *context, pl2_MString mstring) {
     item = item->next;
     assert(item != NULL);
   }
-  
+
   return item->value;
+}
+
+/*** ----------------- Implementation of pl2_Error ----------------- ***/
+
+pl2_Error *pl2_error(uint16_t errorCode,
+                     const char *reason,
+                     void *extraData) {
+  size_t len = strlen(reason);
+  pl2_Error *ret = (pl2_Error*)malloc(sizeof(pl2_Error) + len + 1);
+  ret->extraData = extraData;
+  ret->errorCode = errorCode;
+  strcpy(ret->reason, reason);
+  return ret;
+}
+
+pl2_Error *pl2_errorBuffer(size_t strBufferSize) {
+  pl2_Error *ret = (pl2_Error*)malloc(sizeof(pl2_Error) + strBufferSize);
+  memset(ret, 0, sizeof(pl2_Error) + strBufferSize);
+  return ret;
+}
+
+void pl2_fillError(pl2_Error *error,
+                   uint16_t errorCode,
+                   const char *reason,
+                   void *extraData) {
+  error->extraData = extraData;
+  error->errorCode = errorCode;
+  strcpy(error->reason, reason);
 }
 
 /*** ------------------- Some toolkit functions -------------------- ***/
@@ -120,7 +198,7 @@ pl2_CmdPart pl2_cmdPart(const char *prefix, const char *body) {
   ret.body = body;
   return ret;
 }
-start:
+
 pl2_Cmd *pl2_cmd(pl2_CmdPart *parts) {
   return pl2_cmd4(NULL, NULL, NULL, parts);
 }
@@ -147,6 +225,17 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
 
 /*** ----------------- Implementation of pl2_parse ----------------- ***/
 
+typedef enum e_parse_mode {
+  PARSE_SINGLE_LINE = 1,
+  PARSE_MULTI_LINE  = 2
+} ParseMode;
+
+typedef enum e_ques_cmd {
+  QUES_INVALID = 0,
+  QUES_BEGIN = 1,
+  QUES_END   = 2
+} QuesCmd;
+
 typedef struct st_parse_context {
   pl2_Program program;
   pl2_Cmd *listTail;
@@ -154,28 +243,19 @@ typedef struct st_parse_context {
   char *src;
   uint32_t srcIdx;
   uint16_t line, col;
+  ParseMode mode;
   
   uint32_t partBufferSize;
   uint32_t partUsage;
   pl2_CmdPart partBuffer[0];
 } ParseContext;
 
-static ParseContext *createParseContext(char *source);
 
-pl2_Program pl2_parse(char *source) {
-  pl2_Program ret;
-  ret->language = NULL;
-  ret->libName = NULL;
-  ret->commands = NULL;
-  ret->extraData = NULL;
-  
-  pl2_Cmd *listTail = NULL;
-  pl2_Cmd *thisCmd = NULL;
-  static pl2_CmdPart partBuf[512];
-  uint32_t thisPart = 0;
-  uint32_t srcIdx = 0;
-  uint16_t line = 1, col = 0;
-}
+
+
+
+
+
 
 
 
