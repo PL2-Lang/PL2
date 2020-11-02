@@ -18,6 +18,8 @@ typedef struct st_pl2_slice {
 pl2_Slice pl2_slice(const char *start, const char *end);
 pl2_Slice pl2_nullSlice(void);
 pl2_Slice pl2_sliceFromCStr(const char *cStr);
+char *pl2_unsafeIntoCStr(pl2_Slice slice);
+
 _Bool pl2_sliceCmp(pl2_Slice s1, pl2_Slice s2);
 _Bool pl2_sliceCmpCStr(pl2_Slice slice, const char *cStr);
 size_t pl2_sliceLen(pl2_Slice slice);
@@ -38,6 +40,12 @@ typedef struct st_pl2_error {
   char reason[0];
 } pl2_Error;
 
+typedef enum e_pl2_error_code {
+  PL2_ERR_NONE = 0,    /* No Error */
+  PL2_ERR_GENERAL = 1, /* General hard error */
+  PL2_ERR_PARTBUF = 2, /* Command parts exceed internal part buffer */
+} pl2_ErrorCode;
+
 pl2_Error *pl2_error(uint16_t errorCode,
                      const char *reason,
                      void *extraData);
@@ -48,6 +56,8 @@ void pl2_fillError(pl2_Error *error,
                    uint16_t errorCode,
                    const char *reason,
                    void *extraData);
+
+_Bool pl2_isError(pl2_Error *error);
 
 typedef struct st_pl2_source_info {
   const char *fileName;

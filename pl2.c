@@ -7,10 +7,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*** ----------------- transmute any char to uchar ----------------- ***/
+
+static unsigned char transmute_u8(char i8) {
+  return *(unsigned char*)(&i8);
+}
+
 /*** ----------------- Implementation of pl2_Slice ----------------- ***/
 
 pl2_Slice pl2_slice(const char *start, const char *end) {
-  pl2_Slice ret;
+  pl2_Slice ret; 
   if (start == end) {
     ret.start = NULL;
     ret.end = NULL;
@@ -32,6 +38,11 @@ pl2_Slice pl2_sliceFromCStr(const char *cStr) {
   const char *cStrEnd = cStr;
   while (*cStrEnd++ != '\0');
   return pl2_slice(cStr, cStrEnd);
+}
+
+char *pl2_unsafeIntoCStr(pl2_Slice slice) {
+  slice.end = '\0';
+  return (char*)slice.start;
 }
 
 _Bool pl2_sliceCmp(pl2_Slice s1, pl2_Slice s2) {
@@ -172,6 +183,8 @@ const char *pl2_getString(pl2_MContext *context, pl2_MString mstring) {
 pl2_Error *pl2_error(uint16_t errorCode,
                      const char *reason,
                      void *extraData) {
+  assert(errorCode != 0 && "zero indicates non-error");
+
   size_t len = strlen(reason);
   pl2_Error *ret = (pl2_Error*)malloc(sizeof(pl2_Error) + len + 1);
   ret->extraData = extraData;
@@ -190,9 +203,15 @@ void pl2_fillError(pl2_Error *error,
                    uint16_t errorCode,
                    const char *reason,
                    void *extraData) {
+  assert(errorCode != 0 && "zero indicates non-error");
+  
   error->extraData = extraData;
   error->errorCode = errorCode;
   strcpy(error->reason, reason);
+}
+
+_Bool pl2_isError(pl2_Error *error) {
+  return error->errorCode != 0;
 }
 
 /*** ------------------- Some toolkit functions -------------------- ***/
@@ -202,7 +221,7 @@ pl2_SourceInfo pl2_sourceInfo(const char *fileName, uint16_t line) {
   ret.fileName = fileName;
   ret.line = line;
   return ret;
-}
+} 
 
 pl2_CmdPart pl2_cmdPart(pl2_Slice prefix, pl2_Slice body) {
   pl2_CmdPart ret;
@@ -269,8 +288,35 @@ typedef struct st_parse_context {
 } ParseContext;
 
 static ParseContext *createParseContext(char *src);
+static void parseLine(ParseContext *ctx, pl2_Error *error);
+static void parseQuesMark(ParseContext *ctx, pl2_Error *error);
+static void parsePart(ParseContext *ctx, pl2_Error *error);
+static pl2_Slice parseId(ParseContext *ctx, pl2_Error *error);
+static pl2_Slice parseStr(ParseContext *ctx, pl2_Error *error);
+static void checkBufferSize(ParseContext *ctx, pl2_Error *error);
+static void finishLine(ParseContext *ctx, pl2_Error *error);
+static void skipWhitespace(ParseContext *ctx);
+static void skipComment(ParseContext *ctx);
+static char curChar(ParseContext *ctx);
+static char *curCharPos(ParseContext *ctx);
+static char peekChar(ParseContext *ctx);
+static void nextChar(ParseContext *ctx);
+static _Bool isIdChar(char ch);
 
-pl2_Program pl2_parse(char *source, pl2_Error *error);
+pl2_Program pl2_parse(char *source, pl2_Error *error) {
+  ParseContext *context = createParseContext(source);
+  
+  while (curChar(context) != '\0') {
+    parseLine(context, error);
+    if (pl2_isError(error)) {
+      break;
+    }
+  }
+  
+  pl2_Program ret = context->program;
+  free(context);
+  return ret;
+}
 
 static ParseContext *createParseContext(char *src) {
   ParseContext *ret = (ParseContext*)malloc(
@@ -282,7 +328,7 @@ static ParseContext *createParseContext(char *src) {
   ret->listTail = NULL;
   ret->src = src;
   ret->srcIdx = 0;
-  ret->line = 0;
+  ret->line = 1;
   ret->col = 0;
   ret->mode = PARSE_SINGLE_LINE;
   
@@ -291,6 +337,180 @@ static ParseContext *createParseContext(char *src) {
   
   return ret;
 }
+
+static void parseLine(ParseContext *ctx, pl2_Error *error) {
+  assert(ctx->col == 0);
+  if (curChar(ctx) == '?') {
+    parseQuesMark(ctx, error);
+    if (pl2_isError(error)) {
+      return;
+    }
+  }
+  
+  while (1) {
+    skipWhitespace(ctx);
+    if (curChar(ctx) == '\0' || curChar(ctx) == '\n') {
+      if (ctx->mode == PARSE_SINGLE_LINE) {
+        finishLine(ctx, error);
+      }
+      return;
+    } else if (curChar(ctx) == '#') {
+      skipComment(ctx);
+    } else {
+      parsePart(ctx, error);
+      if (pl2_isError(error)) {
+        return;
+      }
+    }
+  }
+}
+
+static void parseQuesMark(ParseContext *ctx, pl2_Error *error) {
+  assert(curChar(ctx) == '?');
+  nextChar(ctx);
+  
+  const char *start = curCharPos(ctx);
+  while (isalnum(curChar(ctx))) {
+    nextChar(ctx);
+  }
+  const char *end = curCharPos(ctx);
+  
+  pl2_Slice slice = pl2_slice(start, end);
+  if (pl2_sliceCmpCStr(slice, "start")) {
+    ctx->mode = PARSE_MULTI_LINE;
+  } else if (pl2_sliceCmpCStr(slice, "end")) {
+    ctx->mode = PARSE_SINGLE_LINE;
+    finishLine(ctx, error);
+  }
+}
+
+static void parsePart(ParseContext *ctx, pl2_Error *error) {
+  pl2_CmdPart part;
+  if (curChar(ctx) == '"') {
+    pl2_Slice body = parseStr(ctx, error);
+    if (pl2_isError(error)) {
+      return;
+    }
+    part = pl2_cmdPart(pl2_nullSlice(), body);
+  } else {
+    pl2_Slice maybePrefix = parseId(ctx, error);
+    if (pl2_isError(error)) {
+      return;
+    }
+    if (curChar(ctx) == '"') {
+      pl2_Slice body = parseStr(ctx, error);
+      if (pl2_isError(error)) {
+        return;
+      }
+      part = pl2_cmdPart(maybePrefix, body);
+    } else {
+      part = pl2_cmdPart(pl2_nullSlice(), maybePrefix);
+    }
+  }
+  
+  checkBufferSize(ctx, error);
+  if (pl2_isError(error)) {
+    return;
+  }
+  
+  ctx->partBuffer[ctx->partUsage++] = part;
+}
+
+static pl2_Slice parseId(ParseContext *ctx, pl2_Error *error) {
+}
+
+static pl2_Slice parseStr(ParseContext *ctx, pl2_Error *error) {
+}
+
+static void checkBufferSize(ParseContext *ctx, pl2_Error *error) {
+  if (ctx->partBufferSize <= ctx->partUsage) {
+    pl2_fillError(error, PL2_ERR_PARTBUF,
+                  "command parts exceed internal parse buffer",
+                  NULL);
+  }
+}
+
+static void finishLine(ParseContext *ctx, pl2_Error *error) {
+}
+
+static void skipWhitespace(ParseContext *ctx) {
+  while (1) {
+    switch (curChar(ctx)) {
+    case ' ': case '\t': case '\f': case '\v': case '\r':
+      nextChar(ctx);
+      break;
+    default:
+      return;
+    }
+  }
+}
+
+static void skipComment(ParseContext *ctx) {
+  assert(curChar(ctx) == '#');
+  nextChar(ctx);
+  
+  while (curChar(ctx) != '\n' && curChar(ctx) != '\0') {
+    nextChar(ctx);
+  }
+  
+  if (curChar(ctx) == '\n') {
+    nextChar(ctx);
+  }
+}
+
+static char curChar(ParseContext *ctx) {
+  return ctx->src[ctx->srcIdx];
+}
+
+static char *curCharPos(ParseContext *ctx) {
+  return ctx->src + ctx->srcIdx;
+}
+
+static char peekChar(ParseContext *ctx) {
+  if (ctx->src[ctx->srcIdx] == '\0') {
+    return '\0';
+  } else {
+    return ctx->src[ctx->srcIdx + 1];
+  }
+}
+
+static void nextChar(ParseContext *ctx) {
+  if (ctx->src[ctx->srcIdx] == '\0') {
+    return;
+  } else {
+    if (ctx->src[ctx->srcIdx] == '\n') {
+      ctx->line += 1;
+      ctx->col = 0;
+    } else {
+      ctx->col += 1;
+    }
+  }
+}
+
+static _Bool isIdChar(char ch) {
+  unsigned char uch = transmute_u8(ch);
+  if (uch >= 128) {
+    return 1;
+  } else if (isalnum(ch)) {
+    return 1;
+  } else {
+    switch (ch) {
+    case '!': case '$': case '%': case '^': case '&': case '*':
+    case '(': case ')': case '-': case '+': case '_': case '=':
+    case '[': case ']': case '{': case '}': case '|': case '\\':
+    case ':': case ';': case '"': case '\'': case ',': case '<':
+    case '>': case '/': case '?': case '~': case '@':
+      return 1;
+    default:
+      return 0;
+    }
+  }
+}
+
+
+
+
+
 
 
 
