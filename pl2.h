@@ -103,20 +103,27 @@ typedef struct st_pl2_program {
 
 void pl2_initProgram(pl2_Program *program);
 
-typedef void (pl2_SInvokeFuncStub)(const char *strings[], uint16_t n);
-typedef pl2_Cmd* (pl2_PCallFuncStub)(pl2_Program *program,
-                                     void *context,
-                                     pl2_Cmd *command);
+typedef void (pl2_SInvokeCmdStub)(const char *strings[], uint16_t n);
+typedef pl2_Cmd* (pl2_PCallCmdStub)(pl2_Program *program,
+                                    void *context,
+                                    pl2_Cmd *command,
+                                    pl2_Error *error);
+typedef void* (pl2_InitStub)(pl2_Error*);
+typedef void (pl2_AtexitStub)(void*);
 
-typedef struct st_pl2_sinvoke_func {
-  pl2_MString funcName;
-  pl2_SInvokeFuncStub *stub;
-} pl2_SInvokeFunc;
+typedef struct st_pl2_sinvoke_cmd {
+  pl2_MString cmdName;
+  _Bool deprecated;
+  _Bool removed;
+  pl2_SInvokeCmdStub *stub;
+} pl2_SInvokeCmd;
 
 typedef struct st_pl2_pcall_func {
-  pl2_MString funcName;
-  pl2_PCallFuncStub *stub;
-} pl2_PCallFunc;
+  pl2_MString cmdName;
+  _Bool deprecated;
+  _Bool removed;
+  pl2_PCallCmdStub *stub;
+} pl2_PCallCmd;
 
 #define PL2_EMPTY_FUNC(func) ((func)->funcName == 0 && (func)->stub == 0)
 
@@ -125,9 +132,12 @@ typedef struct st_pl2_context {
   pl2_MContext *mContext;
 
   pl2_Cmd *currentCommand;
-  pl2_SInvokeFunc *sinvokeFuncs;
-  pl2_PCallFunc *pcallFuncs;
-  pl2_PCallFuncStub *fallback;
+  pl2_SInvokeCmd *sinvokeFuncs;
+  pl2_PCallCmd *pcallFuncs;
+  
+  pl2_InitStub *init;
+  pl2_AtexitStub *atexit;
+  pl2_PCallCmdStub *fallback;
   void *context;
 } pl2_Context;
 

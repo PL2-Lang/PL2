@@ -629,7 +629,7 @@ static char *shrinkConv(char *start, char *end) {
   return iter2;
 }
 
-/*** -------------------- Semantic-var parsing  -------------------- ***/
+/*** -------------------- Semantic-ver parsing  -------------------- ***/
 
 typedef struct st_sem_ver {
   uint16_t major;
@@ -640,6 +640,7 @@ typedef struct st_sem_ver {
 } SemVer;
 
 static SemVer zeroVersion(void);
+static _Bool isZeroVersion(SemVer ver);
 static SemVer parseSemVer(const char *src, pl2_Error *error);
 static _Bool semverCompatible(SemVer ver1, SemVer ver2);
 static int semverCmp(SemVer ver1, SemVer ver2);
@@ -661,6 +662,14 @@ static SemVer zeroVersion(void) {
   memset(ret.postfix, 0, 15);
   ret.exact = 0;
   return ret;
+}
+
+static _Bool isZeroVersion(SemVer ver) {
+  return ver.major == 0
+         && ver.minor == 0
+         && ver.patch == 0
+         && ver.postfix[0] == 0
+         && ver.exact == 0;
 }
 
 static SemVer parseSemVer(const char *src, pl2_Error *error) {
@@ -762,11 +771,23 @@ static void parseSemVerPostfix(const char *src,
 }
 
 static _Bool semverCompatible(SemVer require, SemVer given) {
-  /* TODO */
+  if (strncmp(require.postfix, given.postfix, 15) != 0) {
+    return 0;
+  }
+  if (require.exact) {
+    return require.major == given.major
+           && require.minor == given.minor
+           && require.patch == given.patch;
+  } else if (require.major == given.major) {
+    return (require.minor == given.minor && require.patch < given.patch)
+           || (require.minor < given.minor);
+  } else {
+    return 0;
+  }
 }
 
 static int semverCmp(SemVer ver1, SemVer ver2) {
-  if (!strncmp(ver1.postfix, ver2.postfix, 16)) {
+  if (!strncmp(ver1.postfix, ver2.postfix, 15)) {
     return 2;
   }
   
@@ -810,28 +831,47 @@ static void semverToString(SemVer ver, char *buffer) {
 pl2_Cmd *pl2_func(pl2_Program*, void**, pl2_Cmd*, pl2_Error*);
 */
 
-typedef struct st_sinvoke_func_info {
-  pl2_SInvokeFunc func;
+typedef struct st_sinvoke_cmd_info {
+  pl2_SInvokeCmd cmd;
+  SemVer lastUpdated;
   pl2_Slice ffiFuncName;
-  SemVer version;
 } SInvokeFuncInfo;
 
-typedef struct st_pcall_func_info {
+typedef struct st_pcall_cmd_info {
+  pl2_PCallCmd cmd;
+  SemVer lastUpdated;
+  pl2_Slice ffiFuncName;
 } PCallFuncInfo;
 
-typedef struct st_pl2_lang_extra_data {
-  pl2_Context context;
+typedef struct st_builtin_lang_context {
+  pl2_Slice fullName;
+  pl2_Slice clibName;
+  pl2_Slice *authors;
+  pl2_Slice license;
+  pl2_Slice introduction;
   
-} pl2_LangExtraData;
+  SemVer currentVersion;
+  SemVer requiredVersion;
+  
+  uint8_t sinvokeFuncUsage;
+  uint8_t pcallFuncUsage;
+  SInvokeFuncInfo sinvokeFuncInfo[256];
+  PCallFuncInfo pcallFuncInfo[256];
+} BuiltinLangContext;
 
-static pl2_Cmd* pl2_langInit(pl2_Program *program,
-                             void **extraData,
-                             pl2_Cmd *command,
-                             pl2_Error *error) {
-  (void)program;
-  (void)extraData;
-  (void)command;
-  (void)error;
-  return command->next;
+static BuiltinLangContext *createBuiltinLangContext(void);
+static void addAuthor(BuiltinLangContext *ctx, pl2_Slice author);
+static void newVersion(BuiltinLangContext *ctx, SemVer newVersion);
+static void addCmd(BuiltinLangContext *ctx,
+                   pl2_Slice cmdName,
+                   pl2_Slice convention,
+                   pl2_Slice ffiFuncName);
+static void deprecateCmd(BuiltinLangContext *ctx, pl2_Slice cmdName);
+static void removeFunc(BuiltinLangContext *ctx, pl2_Slice cmdName);
+
+static BuiltinLangContext *createBuiltinLangContext(void) {
+  BuiltinLangContext *ret = 
+    (BuiltinLangContext*)malloc(sizeof(BuiltinLangContext));
+  memset(ret, 0, sizeof(BuiltinLangContext));
+  return ret;
 }
-
