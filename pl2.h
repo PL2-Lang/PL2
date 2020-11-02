@@ -41,10 +41,14 @@ typedef struct st_pl2_error {
 } pl2_Error;
 
 typedef enum e_pl2_error_code {
-  PL2_ERR_NONE = 0,     /* No Error */
-  PL2_ERR_GENERAL = 1,  /* General hard error */
-  PL2_ERR_PARTBUF = 2,  /* Command parts exceed internal part buffer */
-  PL2_ERR_UNCLOSED = 3, /* Unclosed string literal */
+  PL2_ERR_NONE = 0, /* No Error */
+  PL2_ERR_GENERAL = 1, /* General hard error */
+  PL2_ERR_PARTBUF = 2, /* Command parts exceed internal part buffer */
+  PL2_ERR_UNCLOSED_STR = 3, /* Unclosed string literal */
+  PL2_ERR_UNCLOSED_BEGIN = 4, /* Unclosed ?begin block */
+  PL2_ERR_EMPTY_CMD = 5, /* Empty command */
+  PL2_ERR_SEMVER_PARSE = 6, /* SemVer parse error */
+  PL2_ERR_UNKNOWN_QUES = 7, /* Unknown question mark command */
 } pl2_ErrorCode;
 
 pl2_Error *pl2_error(uint16_t errorCode,

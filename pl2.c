@@ -40,8 +40,20 @@ pl2_Slice pl2_sliceFromCStr(const char *cStr) {
   return pl2_slice(cStr, cStrEnd);
 }
 
+void pl2_printSlice(void *ptr, pl2_Slice slice) {
+  FILE *fp = (FILE*)ptr;
+  for (const char *it = slice.start;
+       it != slice.end;
+       ++it) {
+    fputc(*it, fp);
+  }
+}
+
 char *pl2_unsafeIntoCStr(pl2_Slice slice) {
-  slice.end = '\0';
+  if (pl2_isNullSlice(slice)) {
+    return NULL;
+  }
+  *(char*)slice.end = '\0';
   return (char*)slice.start;
 }
 
@@ -245,7 +257,13 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
   pl2_Cmd *ret = (pl2_Cmd*)malloc(sizeof(pl2_Cmd) +
                                   (partCount+1) * sizeof(pl2_CmdPart));
   ret->prev = prev;
+  if (prev != NULL) {
+    prev->next = ret;
+  }
   ret->next = next;
+  if (next != NULL) {
+    next->prev = ret;
+  }
   ret->extraData = extraData;
   for (uint32_t i = 0; i < partCount; i++) {
     ret->parts[i] = parts[i];
@@ -255,9 +273,38 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
 }
 
 void pl2_initProgram(pl2_Program *program) {
-  program->language = pl2_nullSlice();
   program->commands = NULL;
   program->extraData = NULL;
+}
+
+void pl2_clearProgram(pl2_Program *program) {
+  pl2_Cmd *iter = program->commands;
+  while (iter != NULL) {
+    pl2_Cmd *next = iter->next;
+    free(iter);
+    iter = next;
+  }
+}
+
+void pl2_debugPrintProgram(const pl2_Program *program) {
+  fprintf(stderr, "program commands\n");
+  pl2_Cmd *cmd = program->commands;
+  while (cmd != NULL) {
+    fprintf(stderr, "\t[");
+    for (size_t i = 0; !PL2_EMPTY_PART(cmd->parts + i); i++) {
+      pl2_CmdPart *part = cmd->parts + i;
+      if (pl2_isNullSlice(part->prefix)) {
+        fprintf(stderr, "`%s`, ", pl2_unsafeIntoCStr(part->body));
+      } else {
+        fprintf(stderr, "(`%s`, `%s`), ",
+                pl2_unsafeIntoCStr(part->prefix),
+                pl2_unsafeIntoCStr(part->body));
+      }
+    }
+    fprintf(stderr, "\b\b]\n");
+    cmd = cmd->next;
+  }
+  fprintf(stderr, "end program commands\n");
 }
 
 /*** ----------------- Implementation of pl2_parse ----------------- ***/
@@ -299,10 +346,10 @@ static void skipWhitespace(ParseContext *ctx);
 static void skipComment(ParseContext *ctx);
 static char curChar(ParseContext *ctx);
 static char *curCharPos(ParseContext *ctx);
-static char peekChar(ParseContext *ctx);
 static void nextChar(ParseContext *ctx);
 static _Bool isIdChar(char ch);
 static _Bool isLineEnd(char ch);
+static char *shrinkConv(char *start, char *end);
 
 pl2_Program pl2_parse(char *source, pl2_Error *error) {
   ParseContext *context = createParseContext(source);
@@ -325,7 +372,6 @@ static ParseContext *createParseContext(char *src) {
   );
 
   pl2_initProgram(&ret->program);
-
   ret->listTail = NULL;
   ret->src = src;
   ret->srcIdx = 0;
@@ -335,7 +381,7 @@ static ParseContext *createParseContext(char *src) {
 
   ret->partBufferSize = 512;
   ret->partUsage = 0;
-
+  memset(ret->partBuffer, 0, 512 * sizeof(pl2_CmdPart));
   return ret;
 }
 
@@ -353,6 +399,13 @@ static void parseLine(ParseContext *ctx, pl2_Error *error) {
     if (curChar(ctx) == '\0' || curChar(ctx) == '\n') {
       if (ctx->mode == PARSE_SINGLE_LINE) {
         finishLine(ctx, error);
+      }
+      if (ctx->mode == PARSE_MULTI_LINE && curChar(ctx) == '\0') {
+        pl2_fillError(error, PL2_ERR_UNCLOSED_BEGIN,
+                      "unclosed `?begin` block", NULL);
+      }
+      if (curChar(ctx) == '\n') {
+        nextChar(ctx);
       }
       return;
     } else if (curChar(ctx) == '#') {
@@ -375,13 +428,16 @@ static void parseQuesMark(ParseContext *ctx, pl2_Error *error) {
     nextChar(ctx);
   }
   const char *end = curCharPos(ctx);
-
   pl2_Slice slice = pl2_slice(start, end);
-  if (pl2_sliceCmpCStr(slice, "start")) {
+  
+  if (pl2_sliceCmpCStr(slice, "begin")) {
     ctx->mode = PARSE_MULTI_LINE;
   } else if (pl2_sliceCmpCStr(slice, "end")) {
     ctx->mode = PARSE_SINGLE_LINE;
     finishLine(ctx, error);
+  } else {
+    pl2_fillError(error, PL2_ERR_UNKNOWN_QUES,
+                  "unknown question mark operator", NULL);
   }
 }
 
@@ -429,11 +485,10 @@ static pl2_Slice parseId(ParseContext *ctx, pl2_Error *error) {
 
 static pl2_Slice parseStr(ParseContext *ctx, pl2_Error *error) {
   assert(curChar(ctx) == '"');
-  nextChar();
+  nextChar(ctx);
 
   char *start = curCharPos(ctx);
-  while (curChar(ctx) != '"'
-         && curChar(ctx) != '\n' && curChar(ctx) != '\0') {
+  while (curChar(ctx) != '"' && !isLineEnd(curChar(ctx))) {
     if (curChar(ctx) == '\\') {
       nextChar(ctx);
       nextChar(ctx);
@@ -442,19 +497,20 @@ static pl2_Slice parseStr(ParseContext *ctx, pl2_Error *error) {
     }
   }
   char *end = curCharPos(ctx);
+  end = shrinkConv(start, end);
+  
   if (curChar(ctx) == '"') {
     nextChar(ctx);
   } else {
-    pl2_fillError(error, PL2_ERR_UNCLOSED,
+    pl2_fillError(error, PL2_ERR_UNCLOSED_STR,
                   "unclosed string literal", NULL);
     return pl2_nullSlice();
   }
-  // TODO shrink the slice content
-  return pl2_Slice(start, end);
+  return pl2_slice(start, end);
 }
 
 static void checkBufferSize(ParseContext *ctx, pl2_Error *error) {
-  if (ctx->partBufferSize <= ctx->partUsage) {
+  if (ctx->partBufferSize <= ctx->partUsage + 1) {
     pl2_fillError(error, PL2_ERR_PARTBUF,
                   "command parts exceed internal parse buffer",
                   NULL);
@@ -462,7 +518,21 @@ static void checkBufferSize(ParseContext *ctx, pl2_Error *error) {
 }
 
 static void finishLine(ParseContext *ctx, pl2_Error *error) {
-
+  if (ctx->partUsage) {
+    pl2_fillError(error, PL2_ERR_EMPTY_CMD,
+                  "empty commands are not allowed", NULL);
+    return;
+  }
+  if (ctx->listTail == NULL) {
+    assert(ctx->program.commands == NULL);
+    ctx->program.commands = 
+      ctx->listTail = pl2_cmd(ctx->partBuffer);
+  } else {
+    ctx->listTail = pl2_cmd4(ctx->listTail, NULL, NULL, ctx->partBuffer);
+  }
+  memset(ctx->partBuffer, 0,
+         sizeof(pl2_CmdPart) * ctx->partBufferSize);
+  ctx->partUsage = 0;
 }
 
 static void skipWhitespace(ParseContext *ctx) {
@@ -498,14 +568,6 @@ static char *curCharPos(ParseContext *ctx) {
   return ctx->src + ctx->srcIdx;
 }
 
-static char peekChar(ParseContext *ctx) {
-  if (ctx->src[ctx->srcIdx] == '\0') {
-    return '\0';
-  } else {
-    return ctx->src[ctx->srcIdx + 1];
-  }
-}
-
 static void nextChar(ParseContext *ctx) {
   if (ctx->src[ctx->srcIdx] == '\0') {
     return;
@@ -516,6 +578,7 @@ static void nextChar(ParseContext *ctx) {
     } else {
       ctx->col += 1;
     }
+    ctx->srcIdx += 1;
   }
 }
 
@@ -530,8 +593,8 @@ static _Bool isIdChar(char ch) {
     case '!': case '$': case '%': case '^': case '&': case '*':
     case '(': case ')': case '-': case '+': case '_': case '=':
     case '[': case ']': case '{': case '}': case '|': case '\\':
-    case ':': case ';': case '"': case '\'': case ',': case '<':
-    case '>': case '/': case '?': case '~': case '@':
+    case ':': case ';': case '\'': case ',': case '<': case '>':
+    case '/': case '?': case '~': case '@': case '.':
       return 1;
     default:
       return 0;
@@ -543,14 +606,232 @@ static _Bool isLineEnd(char ch) {
   return ch == '\0' || ch == '\n';
 }
 
+static char *shrinkConv(char *start, char *end) {
+  char *iter1 = start, *iter2 = start;
+  while (iter1 != end) {
+    if (iter1[0] == '\\') {
+      switch (iter1[1]) {
+      case 'n': *iter2++ = '\n'; iter1 += 2; break;
+      case 'r': *iter2++ = '\r'; iter1 += 2; break;
+      case 'f': *iter2++ = '\f'; iter1 += 2; break;
+      case 'v': *iter2++ = '\v'; iter1 += 2; break;
+      case 't': *iter2++ = '\t'; iter1 += 2; break;
+      case 'a': *iter2++ = '\a'; iter1 += 2; break;
+      case '"': *iter2++ = '\"'; iter1 += 2; break;
+      case '0': *iter2++ = '\0'; iter1 += 2; break;
+      default:
+        *iter2++ = *iter1++;
+      }
+    } else {
+      *iter2++ = *iter1++;
+    }
+  }
+  return iter2;
+}
 
+/*** -------------------- Semantic-var parsing  -------------------- ***/
 
+typedef struct st_sem_ver {
+  uint16_t major;
+  uint16_t minor;
+  uint16_t patch;
+  char postfix[15];
+  _Bool exact;
+} SemVer;
 
+static SemVer zeroVersion(void);
+static SemVer parseSemVer(const char *src, pl2_Error *error);
+static _Bool semverCompatible(SemVer ver1, SemVer ver2);
+static int semverCmp(SemVer ver1, SemVer ver2);
+static void semverToString(SemVer ver, char *buffer);
 
+static const char *parseUint16(const char *src,
+                               uint16_t *output,
+                               pl2_Error *error);
 
+static void parseSemVerPostfix(const char *src,
+                               char *output,
+                               pl2_Error *error);
 
+static SemVer zeroVersion(void) {
+  SemVer ret;
+  ret.major = 0;
+  ret.minor = 0;
+  ret.patch = 0;
+  memset(ret.postfix, 0, 15);
+  ret.exact = 0;
+  return ret;
+}
 
+static SemVer parseSemVer(const char *src, pl2_Error *error) {
+  SemVer ret = zeroVersion();
+  if (src[0] == '^') {
+    ret.exact = 1;
+    src++;
+  }
+  
+  src = parseUint16(src, &ret.major, error);
+  if (pl2_isError(error)) {
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+                  "missing major version", NULL);
+    goto done;
+  } else if (src[0] == '\0') {
+    goto done;
+  } else if (src[0] == '-') {
+    goto parse_postfix;
+  } else if (src[0] != '.') {
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+                  "expected `.`", NULL);
+    goto done;
+  }
+  
+  src++;
+  src = parseUint16(src, &ret.minor, error);
+  if (pl2_isError(error)) {
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+                  "missing minor version", NULL);
+    goto done;
+  } else if (src[0] == '\0') {
+    goto done;
+  } else if (src[0] == '-') {
+    goto parse_postfix;
+  } else if (src[0] != '.') {
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+                  "expected `.`", NULL);
+    goto done;
+  }
+  
+  src++;
+  src = parseUint16(src, &ret.patch, error);
+  if (pl2_isError(error)) {
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+                  "missing patch version", NULL);
+    goto done;
+  } else if (src[0] == '\0') {
+    goto done;
+  } else if (src[0] != '-') {
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+                  "unterminated semver, expected `-` or `\\0`", NULL);
+    goto done;
+  } 
+  
+parse_postfix:
+  parseSemVerPostfix(src, ret.postfix, error);
+  
+done:
+  return ret;
+}
 
+static const char *parseUint16(const char *src,
+                               uint16_t *output,
+                               pl2_Error *error) {
+  if (!isdigit(src[0])) {
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+                  "expected numberic version", NULL);
+    return NULL;
+  }
+  *output = 0;
+  while (isdigit(src[0])) {
+    *output *= 10;
+    *output += src[0] - '0';
+    ++src;
+  }
+  return src;
+}
 
+static void parseSemVerPostfix(const char *src,
+                               char *output,
+                               pl2_Error *error) {
+  assert(src[0] == '-');
+  ++src;
+  if (src[0] == '\0') {
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+                  "empty semver postfix", NULL);
+    return;
+  }
+  for (size_t i = 0; i < 15; i++) {
+    if (!(*output++ = *src++)) {
+      return;
+    }
+  }
+  if (src[0] != '\0') {
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+                  "semver postfix too long", NULL);
+    return;
+  }
+}
 
+static _Bool semverCompatible(SemVer require, SemVer given) {
+  /* TODO */
+}
+
+static int semverCmp(SemVer ver1, SemVer ver2) {
+  if (!strncmp(ver1.postfix, ver2.postfix, 16)) {
+    return 2;
+  }
+  
+  if (ver1.major < ver2.major) {
+    return -1;
+  } else if (ver1.major > ver2.major) {
+    return 1;
+  } else if (ver1.minor < ver2.minor) {
+    return -1;
+  } else if (ver1.minor > ver2.minor) {
+    return 1;
+  } else if (ver1.patch < ver2.patch) {
+    return -1;
+  } else if (ver1.patch > ver2.patch) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+static void semverToString(SemVer ver, char *buffer) {
+  if (ver.postfix[0]) {
+    sprintf(buffer, "%s%u.%u.%u-%s",
+            ver.exact ? "^" : "",
+            ver.major,
+            ver.minor,
+            ver.patch,
+            ver.postfix);
+  } else {
+    sprintf(buffer, "%s%u.%u.%u",
+            ver.exact ? "^" : "",
+            ver.major,
+            ver.minor,
+            ver.patch);
+  }
+}
+
+/*** ------------- Implementation of PL2 builtin lang  ------------- ***/
+
+/*
+pl2_Cmd *pl2_func(pl2_Program*, void**, pl2_Cmd*, pl2_Error*);
+*/
+
+typedef struct st_sinvoke_func_info {
+  pl2_SInvokeFunc func;
+  pl2_Slice ffiFuncName;
+  SemVer version;
+} SInvokeFuncInfo;
+
+typedef struct st_pcall_func_info {
+} PCallFuncInfo;
+
+typedef struct st_pl2_lang_extra_data {
+  pl2_Context context;
+  
+} pl2_LangExtraData;
+
+static pl2_Cmd* pl2_langInit(pl2_Program *program,
+                             void **extraData,
+                             pl2_Cmd *command,
+                             pl2_Error *error) {
+  (void)program;
+  (void)extraData;
+  (void)command;
+  (void)error;
+  return command->next;
+}
 
