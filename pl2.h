@@ -37,6 +37,7 @@ const char *pl2_getString(pl2_MContext *context, pl2_MString mstring);
 typedef struct st_pl2_error {
   void *extraData;
   uint16_t errorCode;
+  uint16_t line;
   char reason[0];
 } pl2_Error;
 
@@ -51,16 +52,20 @@ typedef enum e_pl2_error_code {
   PL2_ERR_UNKNOWN_QUES = 7, /* Unknown question mark command */
 } pl2_ErrorCode;
 
-pl2_Error *pl2_error(uint16_t errorCode,
-                     const char *reason,
-                     void *extraData);
-
 pl2_Error *pl2_errorBuffer(size_t strBufferSize);
 
 void pl2_fillError(pl2_Error *error,
                    uint16_t errorCode,
+                   uint16_t line,
                    const char *reason,
                    void *extraData);
+
+void pl2_errPrintf(pl2_Error *error,
+                   uint16_t errorCode,
+                   uint16_t line,
+                   void *extraData,
+                   const char *fmt,
+                   ...);
 
 _Bool pl2_isError(pl2_Error *error);
 

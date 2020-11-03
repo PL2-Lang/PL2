@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 /*** ----------------- transmute any char to uchar ----------------- ***/
 
@@ -192,19 +193,6 @@ const char *pl2_getString(pl2_MContext *context, pl2_MString mstring) {
 
 /*** ----------------- Implementation of pl2_Error ----------------- ***/
 
-pl2_Error *pl2_error(uint16_t errorCode,
-                     const char *reason,
-                     void *extraData) {
-  assert(errorCode != 0 && "zero indicates non-error");
-
-  size_t len = strlen(reason);
-  pl2_Error *ret = (pl2_Error*)malloc(sizeof(pl2_Error) + len + 1);
-  ret->extraData = extraData;
-  ret->errorCode = errorCode;
-  strcpy(ret->reason, reason);
-  return ret;
-}
-
 pl2_Error *pl2_errorBuffer(size_t strBufferSize) {
   pl2_Error *ret = (pl2_Error*)malloc(sizeof(pl2_Error) + strBufferSize);
   memset(ret, 0, sizeof(pl2_Error) + strBufferSize);
@@ -213,13 +201,29 @@ pl2_Error *pl2_errorBuffer(size_t strBufferSize) {
 
 void pl2_fillError(pl2_Error *error,
                    uint16_t errorCode,
+                   uint16_t line,
                    const char *reason,
                    void *extraData) {
   assert(errorCode != 0 && "zero indicates non-error");
-
   error->extraData = extraData;
   error->errorCode = errorCode;
+  error->line = line;
   strcpy(error->reason, reason);
+}
+
+void pl2_errPrintf(pl2_Error *error,
+                   uint16_t errorCode,
+                   uint16_t line,
+                   void *extraData,
+                   const char *fmt,
+                   ...) {
+  error->errorCode = errorCode;
+  error->extraData = extraData;
+  error->line = line;
+  va_list ap;
+  va_start(ap, fmt);
+  vsprintf(error->reason, fmt, ap);
+  va_end(ap);
 }
 
 _Bool pl2_isError(pl2_Error *error) {
@@ -401,7 +405,7 @@ static void parseLine(ParseContext *ctx, pl2_Error *error) {
         finishLine(ctx, error);
       }
       if (ctx->mode == PARSE_MULTI_LINE && curChar(ctx) == '\0') {
-        pl2_fillError(error, PL2_ERR_UNCLOSED_BEGIN,
+        pl2_fillError(error, PL2_ERR_UNCLOSED_BEGIN, ctx->line,
                       "unclosed `?begin` block", NULL);
       }
       if (curChar(ctx) == '\n') {
@@ -436,8 +440,9 @@ static void parseQuesMark(ParseContext *ctx, pl2_Error *error) {
     ctx->mode = PARSE_SINGLE_LINE;
     finishLine(ctx, error);
   } else {
-    pl2_fillError(error, PL2_ERR_UNKNOWN_QUES,
-                  "unknown question mark operator", NULL);
+    pl2_errPrintf(error, PL2_ERR_UNKNOWN_QUES, ctx->line, NULL,
+                  "unknown question mark operator: `%s`",
+                  pl2_unsafeIntoCStr(slice));
   }
 }
 
@@ -502,7 +507,7 @@ static pl2_Slice parseStr(ParseContext *ctx, pl2_Error *error) {
   if (curChar(ctx) == '"') {
     nextChar(ctx);
   } else {
-    pl2_fillError(error, PL2_ERR_UNCLOSED_STR,
+    pl2_fillError(error, PL2_ERR_UNCLOSED_STR, ctx->line,
                   "unclosed string literal", NULL);
     return pl2_nullSlice();
   }
@@ -511,7 +516,7 @@ static pl2_Slice parseStr(ParseContext *ctx, pl2_Error *error) {
 
 static void checkBufferSize(ParseContext *ctx, pl2_Error *error) {
   if (ctx->partBufferSize <= ctx->partUsage + 1) {
-    pl2_fillError(error, PL2_ERR_PARTBUF,
+    pl2_fillError(error, PL2_ERR_PARTBUF, ctx->line,
                   "command parts exceed internal parse buffer",
                   NULL);
   }
@@ -519,7 +524,7 @@ static void checkBufferSize(ParseContext *ctx, pl2_Error *error) {
 
 static void finishLine(ParseContext *ctx, pl2_Error *error) {
   if (ctx->partUsage) {
-    pl2_fillError(error, PL2_ERR_EMPTY_CMD,
+    pl2_fillError(error, PL2_ERR_EMPTY_CMD, ctx->line,
                   "empty commands are not allowed", NULL);
     return;
   }
@@ -681,7 +686,7 @@ static SemVer parseSemVer(const char *src, pl2_Error *error) {
   
   src = parseUint16(src, &ret.major, error);
   if (pl2_isError(error)) {
-    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE, 0,
                   "missing major version", NULL);
     goto done;
   } else if (src[0] == '\0') {
@@ -689,15 +694,15 @@ static SemVer parseSemVer(const char *src, pl2_Error *error) {
   } else if (src[0] == '-') {
     goto parse_postfix;
   } else if (src[0] != '.') {
-    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
-                  "expected `.`", NULL);
+    pl2_errPrintf(error, PL2_ERR_SEMVER_PARSE, 0, NULL,
+                  "expected `.`, got `%c`", src[0]);
     goto done;
   }
   
   src++;
   src = parseUint16(src, &ret.minor, error);
   if (pl2_isError(error)) {
-    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE, 0,
                   "missing minor version", NULL);
     goto done;
   } else if (src[0] == '\0') {
@@ -705,22 +710,23 @@ static SemVer parseSemVer(const char *src, pl2_Error *error) {
   } else if (src[0] == '-') {
     goto parse_postfix;
   } else if (src[0] != '.') {
-    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
-                  "expected `.`", NULL);
+    pl2_errPrintf(error, PL2_ERR_SEMVER_PARSE, 0, NULL,
+                  "expected `.`, got `%c`", src[0]);
     goto done;
   }
   
   src++;
   src = parseUint16(src, &ret.patch, error);
   if (pl2_isError(error)) {
-    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE, 0,
                   "missing patch version", NULL);
     goto done;
   } else if (src[0] == '\0') {
     goto done;
   } else if (src[0] != '-') {
-    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
-                  "unterminated semver, expected `-` or `\\0`", NULL);
+    pl2_errPrintf(error, PL2_ERR_SEMVER_PARSE, 0, NULL,
+                  "unterminated semver, expected `-` or `\\0`, got `%c`",
+                  src[0]);
     goto done;
   } 
   
@@ -735,7 +741,7 @@ static const char *parseUint16(const char *src,
                                uint16_t *output,
                                pl2_Error *error) {
   if (!isdigit(src[0])) {
-    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE, 0,
                   "expected numberic version", NULL);
     return NULL;
   }
@@ -754,7 +760,7 @@ static void parseSemVerPostfix(const char *src,
   assert(src[0] == '-');
   ++src;
   if (src[0] == '\0') {
-    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE, 0,
                   "empty semver postfix", NULL);
     return;
   }
@@ -764,7 +770,7 @@ static void parseSemVerPostfix(const char *src,
     }
   }
   if (src[0] != '\0') {
-    pl2_fillError(error, PL2_ERR_SEMVER_PARSE,
+    pl2_fillError(error, PL2_ERR_SEMVER_PARSE, 0,
                   "semver postfix too long", NULL);
     return;
   }
