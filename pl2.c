@@ -278,7 +278,6 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
 
 void pl2_initProgram(pl2_Program *program) {
   program->commands = NULL;
-  program->extraData = NULL;
 }
 
 void pl2_clearProgram(pl2_Program *program) {
@@ -636,16 +635,20 @@ static char *shrinkConv(char *start, char *end) {
 
 /*** -------------------- Semantic-ver parsing  -------------------- ***/
 
+#define SEMVER_POSTFIX_LEN 15
+
 typedef struct st_sem_ver {
   uint16_t major;
   uint16_t minor;
   uint16_t patch;
-  char postfix[15];
+  char postfix[SEMVER_POSTFIX_LEN];
   _Bool exact;
 } SemVer;
 
 static SemVer zeroVersion(void);
 static _Bool isZeroVersion(SemVer ver);
+static _Bool isAlphaVersion(SemVer ver);
+static _Bool isStableVersion(SemVer ver);
 static SemVer parseSemVer(const char *src, pl2_Error *error);
 static _Bool semverCompatible(SemVer ver1, SemVer ver2);
 static int semverCmp(SemVer ver1, SemVer ver2);
@@ -664,7 +667,7 @@ static SemVer zeroVersion(void) {
   ret.major = 0;
   ret.minor = 0;
   ret.patch = 0;
-  memset(ret.postfix, 0, 15);
+  memset(ret.postfix, 0, SEMVER_POSTFIX_LEN);
   ret.exact = 0;
   return ret;
 }
@@ -675,6 +678,14 @@ static _Bool isZeroVersion(SemVer ver) {
          && ver.patch == 0
          && ver.postfix[0] == 0
          && ver.exact == 0;
+}
+
+static _Bool isAlphaVersion(SemVer ver) {
+  return ver.postfix[0] != '\0';
+}
+
+static _Bool isStableVersion(SemVer ver) {
+  return !isAlphaVersion(ver) && ver.major != 0;
 }
 
 static SemVer parseSemVer(const char *src, pl2_Error *error) {
@@ -764,7 +775,7 @@ static void parseSemVerPostfix(const char *src,
                   "empty semver postfix", NULL);
     return;
   }
-  for (size_t i = 0; i < 15; i++) {
+  for (size_t i = 0; i < SEMVER_POSTFIX_LEN - 1; i++) {
     if (!(*output++ = *src++)) {
       return;
     }
@@ -777,7 +788,7 @@ static void parseSemVerPostfix(const char *src,
 }
 
 static _Bool semverCompatible(SemVer require, SemVer given) {
-  if (strncmp(require.postfix, given.postfix, 15) != 0) {
+  if (strncmp(require.postfix, given.postfix, SEMVER_POSTFIX_LEN) != 0) {
     return 0;
   }
   if (require.exact) {
@@ -793,7 +804,7 @@ static _Bool semverCompatible(SemVer require, SemVer given) {
 }
 
 static int semverCmp(SemVer ver1, SemVer ver2) {
-  if (!strncmp(ver1.postfix, ver2.postfix, 15)) {
+  if (!strncmp(ver1.postfix, ver2.postfix, SEMVER_POSTFIX_LEN)) {
     return 2;
   }
   
@@ -833,47 +844,60 @@ static void semverToString(SemVer ver, char *buffer) {
 
 /*** ------------- Implementation of PL2 builtin lang  ------------- ***/
 
-/*
-pl2_Cmd *pl2_func(pl2_Program*, void**, pl2_Cmd*, pl2_Error*);
-*/
-
 typedef struct st_sinvoke_cmd_info {
   pl2_SInvokeCmd cmd;
   SemVer lastUpdated;
   pl2_Slice ffiFuncName;
-} SInvokeFuncInfo;
+} SInvokeCmdInfo;
 
 typedef struct st_pcall_cmd_info {
   pl2_PCallCmd cmd;
   SemVer lastUpdated;
   pl2_Slice ffiFuncName;
-} PCallFuncInfo;
+} PCallCmdInfo;
+
+typedef struct st_init_info {
+  pl2_InitStub *stub;
+  SemVer lastUpdated;
+  pl2_Slice ffiFuncName;
+} InitCmdInfo;
+
+typedef struct st_atexit_info {
+  pl2_AtexitStub *stub;
+  SemVer lastUpdated;
+  pl2_Slice ffiFuncName;
+} AtExitCmdInfo;
 
 typedef struct st_builtin_lang_context {
   pl2_Slice fullName;
   pl2_Slice clibName;
+  pl2_Slice *tags;
   pl2_Slice *authors;
   pl2_Slice license;
-  pl2_Slice introduction;
+  pl2_Slice description;
   
   SemVer currentVersion;
   SemVer requiredVersion;
   
   uint8_t sinvokeFuncUsage;
   uint8_t pcallFuncUsage;
-  SInvokeFuncInfo sinvokeFuncInfo[256];
-  PCallFuncInfo pcallFuncInfo[256];
+  SInvokeCmdInfo sinvokeFuncInfo[256];
+  PCallCmdInfo pcallFuncInfo[256];
+  PCallCmdInfo fallbackFuncInfo;
+  
+  InitCmdInfo initCmdInfo;
+  AtExitCmdInfo atExitCmdInfo;
 } BuiltinLangContext;
 
+typedef enum e_cmd_convention {
+  CONV_SINVOKE = 0,
+  CONV_PCALL   = 1,
+  
+  CONV_INVALID = 255
+} CmdConvention;
+
 static BuiltinLangContext *createBuiltinLangContext(void);
-static void addAuthor(BuiltinLangContext *ctx, pl2_Slice author);
-static void newVersion(BuiltinLangContext *ctx, SemVer newVersion);
-static void addCmd(BuiltinLangContext *ctx,
-                   pl2_Slice cmdName,
-                   pl2_Slice convention,
-                   pl2_Slice ffiFuncName);
-static void deprecateCmd(BuiltinLangContext *ctx, pl2_Slice cmdName);
-static void removeFunc(BuiltinLangContext *ctx, pl2_Slice cmdName);
+static CmdConvention resolveConvention(pl2_Slice str);
 
 static BuiltinLangContext *createBuiltinLangContext(void) {
   BuiltinLangContext *ret = 
@@ -881,3 +905,15 @@ static BuiltinLangContext *createBuiltinLangContext(void) {
   memset(ret, 0, sizeof(BuiltinLangContext));
   return ret;
 }
+
+static CmdConvention resolveConvention(pl2_Slice str) {
+  if (pl2_sliceCmpCStr(str, "sinvoke")) {
+    return CONV_SINVOKE;
+  } else if (pl2_sliceCmpCStr(str, "pcall")) {
+    return CONV_SINVOKE;
+  } else {
+    return CONV_INVALID;
+  }
+}
+
+

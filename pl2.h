@@ -3,12 +3,19 @@
 
 #define PLAPI
 
+#define PL2_MAJOR 0
+#define PL2_MINOR 1
+#define PL2_PATCH 0
+#define PL2_POSTFIX "alpha"
+
 #include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*** -------------------------- pl2_Slice -------------------------- ***/
 
 typedef struct st_pl2_slice {
   const char *start;
@@ -25,6 +32,8 @@ _Bool pl2_sliceCmpCStr(pl2_Slice slice, const char *cStr);
 size_t pl2_sliceLen(pl2_Slice slice);
 _Bool pl2_isNullSlice(pl2_Slice slice);
 
+/*** ------------------------- pl2_MString ------------------------- ***/
+
 typedef uint32_t pl2_MString;
 typedef struct st_m_context {
 } pl2_MContext;
@@ -33,6 +42,8 @@ pl2_MContext *pl2_mContext(void);
 void pl2_mContextFree(pl2_MContext *context);
 pl2_MString pl2_mString(pl2_MContext *context, const char *string);
 const char *pl2_getString(pl2_MContext *context, pl2_MString mstring);
+
+/*** -------------------------- pl2_Error -------------------------- ***/
 
 typedef struct st_pl2_error {
   void *extraData;
@@ -69,12 +80,16 @@ void pl2_errPrintf(pl2_Error *error,
 
 _Bool pl2_isError(pl2_Error *error);
 
+/*** ----------------------- pl2_SourceInfo  ----------------------- ***/
+
 typedef struct st_pl2_source_info {
   const char *fileName;
   uint16_t line;
 } pl2_SourceInfo;
 
 pl2_SourceInfo pl2_sourceInfo(const char *fileName, uint16_t line);
+
+/*** --------------------------- pl2_Cmd --------------------------- ***/
 
 typedef struct st_pl2_cmd_part {
   pl2_Slice prefix;
@@ -92,6 +107,7 @@ typedef struct st_pl2_cmd {
 
   void *extraData;
   pl2_CmdPart parts[0];
+
 } pl2_Cmd;
 
 pl2_Cmd *pl2_cmd(pl2_CmdPart *parts);
@@ -100,21 +116,26 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
                   void *extraData,
                   pl2_CmdPart *parts);
 
+/*** ------------------------- pl2_Program ------------------------- ***/
+
 typedef struct st_pl2_program {
   pl2_Slice language;
   pl2_Cmd *commands;
-  void *extraData;
 } pl2_Program;
 
 void pl2_initProgram(pl2_Program *program);
+pl2_Program pl2_parse(char *source, pl2_Error *error);
 
-typedef void (pl2_SInvokeCmdStub)(const char *strings[], uint16_t n);
+/*** -------------------------- pl2_Exec  -------------------------- ***/
+
+typedef void (pl2_SInvokeCmdStub)(const char *strings[]);
 typedef pl2_Cmd* (pl2_PCallCmdStub)(pl2_Program *program,
                                     void *context,
                                     pl2_Cmd *command,
                                     pl2_Error *error);
-typedef void* (pl2_InitStub)(pl2_Error*);
-typedef void (pl2_AtexitStub)(void*);
+
+typedef void* (pl2_InitStub)(pl2_Error *error);
+typedef void (pl2_AtexitStub)(void *context, pl2_Error *error);
 
 typedef struct st_pl2_sinvoke_cmd {
   pl2_MString cmdName;
@@ -130,7 +151,11 @@ typedef struct st_pl2_pcall_func {
   pl2_PCallCmdStub *stub;
 } pl2_PCallCmd;
 
-#define PL2_EMPTY_FUNC(func) ((func)->funcName == 0 && (func)->stub == 0)
+#define PL2_EMPTY_FUNC(func) \
+  ((func)->funcName == 0 \
+    && (func)->stub == 0 \
+    && (func)->deprecated == 0 \
+    && (func)->removed == 0)
 
 typedef struct st_pl2_context {
   pl2_Program program;
@@ -146,9 +171,11 @@ typedef struct st_pl2_context {
   void *context;
 } pl2_Context;
 
-pl2_Program pl2_parse(char *source, pl2_Error *error);
-pl2_Context pl2_loadLanguage(pl2_Program program, pl2_Error *error);
+void pl2_initContext(pl2_Context *context,
+                     pl2_Slice langName,
+                     pl2_Error *error);
 void pl2_run(pl2_Context *program, pl2_Error *error);
+void pl2_clearContext(pl2_Context *context);
 
 #ifdef __cplusplus
 } /* extern "C" */
