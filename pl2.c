@@ -10,7 +10,7 @@
 
 /*** ----------------- transmute any char to uchar ----------------- ***/
 
-static unsigned char transmute_u8(char i8) {
+static unsigned char transmuteU8(char i8) {
   return *(unsigned char*)(&i8);
 }
 
@@ -587,7 +587,7 @@ static void nextChar(ParseContext *ctx) {
 }
 
 static _Bool isIdChar(char ch) {
-  unsigned char uch = transmute_u8(ch);
+  unsigned char uch = transmuteU8(ch);
   if (uch >= 128) {
     return 1;
   } else if (isalnum(ch)) {
