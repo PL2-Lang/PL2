@@ -5,10 +5,10 @@ extern pl2_Language*
 pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error);
 
 static pl2_Cmd*
-pl2ext_pldbg_fallback(pl2_Program *program,
-                     void *context,
-                     pl2_Cmd *cmd,
-                     pl2_Error *error);
+pldbg_fallback(pl2_Program *program,
+               void *context,
+               pl2_Cmd *cmd,
+               pl2_Error *error);
 
 pl2_Language *pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error) {
   (void)version;
@@ -17,24 +17,24 @@ pl2_Language *pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error) {
   static pl2_Cmd termCmd;
   
   static pl2_Language ret = {
-    "PL2 external debugger",
-    "this language will display intaking commands",
-    &termCmd,
+    /*langName    = */ "PL2 external debugger",
+    /*langInfo    = */ "this language will display intaking commands",
+    /*termCmd     = */ &termCmd,
 
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    pl2ext_pldbg_fallback
+    /*init        = */ NULL,
+    /*atExit      = */ NULL,
+    /*sinvokeCmds = */ NULL,
+    /*pCallCmds   = */ NULL,
+    /*fallback    = */ pldbg_fallback
   };
   
   return &ret;
 }
 
-static pl2_Cmd *pl2ext_pldbg_fallback(pl2_Program *program,
-                                      void *context,
-                                      pl2_Cmd *cmd,
-                                      pl2_Error *error) {
+static pl2_Cmd *pldbg_fallback(pl2_Program *program,
+                               void *context,
+                               pl2_Cmd *cmd,
+                               pl2_Error *error) {
   (void)program;
   (void)context;
   (void)error;

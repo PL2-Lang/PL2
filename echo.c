@@ -11,19 +11,20 @@ pl2_Language* pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error) {
   (void)error;
 
   static pl2_SInvokeCmd sinvokeCmds[] = {
-    { "echo", echo_1_0_0, 0, 0}
+    /* cmdName  stub        deprecated  removed*/
+    { "echo",   echo_1_0_0, 0,          0 }
   };
 
   static pl2_Language ret = {
-    "The Echo Language",
-    "This language contains a simple command echo only",
-    NULL,
+    /*langName    = */ "The Echo Language",
+    /*langInfo    = */ "This language contains an echo command only",
+    /*termCmd     = */ NULL,
 
-    NULL,
-    NULL,
-    sinvokeCmds,
-    NULL,
-    NULL,
+    /*init        = */ NULL,
+    /*atExit      = */ NULL,
+    /*sinvokeCmds = */ sinvokeCmds,
+    /*pCallCmds   = */ NULL,
+    /*fallback    = */ NULL,
   };
   
   return &ret;
