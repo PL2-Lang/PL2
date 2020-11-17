@@ -4,36 +4,11 @@
 extern pl2_Language*
 pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error);
 
-extern pl2_Cmd*
+static pl2_Cmd*
 pl2ext_pldbg_fallback(pl2_Program *program,
                      void *context,
                      pl2_Cmd *cmd,
                      pl2_Error *error);
-
-pl2_Cmd *pl2ext_pldbg_fallback(pl2_Program *program,
-                               void *context,
-                               pl2_Cmd *cmd,
-                               pl2_Error *error) {
-  (void)program;
-  (void)context;
-  (void)error;
-
-  fprintf(stderr, "%5u|  ", cmd->line);
-  for (pl2_CmdPart *part = cmd->parts; !PL2_EMPTY_PART(part); part++) {
-    if (!pl2_isNullSlice(part->prefix)) {
-      fprintf(
-        stderr,
-        "%s\"%s\" ",
-        pl2_unsafeIntoCStr(part->prefix),
-        pl2_unsafeIntoCStr(part->body)
-      );
-    } else {
-      fprintf(stderr, "\"%s\" ", pl2_unsafeIntoCStr(part->body));
-    }
-  }
-  fputc('\n', stderr);
-  return NULL;
-}
 
 pl2_Language *pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error) {
   (void)version;
@@ -54,4 +29,29 @@ pl2_Language *pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error) {
   };
   
   return &ret;
+}
+
+static pl2_Cmd *pl2ext_pldbg_fallback(pl2_Program *program,
+                                      void *context,
+                                      pl2_Cmd *cmd,
+                                      pl2_Error *error) {
+  (void)program;
+  (void)context;
+  (void)error;
+
+  fprintf(stderr, "%5u|  ", cmd->line);
+  for (pl2_CmdPart *part = cmd->parts; !PL2_EMPTY_PART(part); part++) {
+    if (!pl2_isNullSlice(part->prefix)) {
+      fprintf(
+        stderr,
+        "%s\"%s\" ",
+        pl2_unsafeIntoCStr(part->prefix),
+        pl2_unsafeIntoCStr(part->body)
+      );
+    } else {
+      fprintf(stderr, "\"%s\" ", pl2_unsafeIntoCStr(part->body));
+    }
+  }
+  fputc('\n', stderr);
+  return NULL;
 }

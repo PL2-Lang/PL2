@@ -852,6 +852,7 @@ static _Bool cmdHandler(RunContext *context,
           fprintf(stderr, "[int/w] sinvoke does not support prefix\n");
         }
         callBuffer[i] = pl2_unsafeIntoCStr(part->body);
+        i++;
       }
       if (iter->stub != NULL) {
         iter->stub(callBuffer);
