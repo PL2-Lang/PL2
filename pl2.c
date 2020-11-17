@@ -920,6 +920,12 @@ static _Bool cmdHandler(RunContext *context,
 static _Bool loadLanguage(RunContext *context,
                           pl2_Cmd *cmd,
                           pl2_Error *error) {
+  if (context->language != NULL) {
+    pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
+                  "language: another language already loaded");
+    return 0;
+  }
+
   uint16_t partsLen = pl2_cmdPartsLen(cmd);
   if (partsLen != 3) {
     pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
@@ -961,7 +967,7 @@ static _Bool loadLanguage(RunContext *context,
   
   if (context->libHandle == NULL) {
     pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
-                  "cannot load language library `%s`: %s",
+                  "language: cannot load language library `%s`: %s",
                   langId, dlerror());
     return 0;
   }
@@ -972,7 +978,7 @@ static _Bool loadLanguage(RunContext *context,
   );
   if (loadPtr == NULL) {
     pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
-                  "cannot locate `%s` on library `%s`: %s",
+                  "language: cannot locate `%s` on library `%s`: %s",
                   "pl2ext_loadLanguage", langId, dlerror());
     return 0;
   }

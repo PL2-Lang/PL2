@@ -27,7 +27,6 @@ pl2_Language* pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error) {
   };
   
   return &ret;
-  
 }
 
 static void echo_1_0_0(const char *args[]) {
