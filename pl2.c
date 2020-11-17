@@ -2,13 +2,14 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <dlfcn.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 
-/*** ----------------- transmute any char to uchar ----------------- ***/
+/*** ----------------- Transmute any char to uchar ----------------- ***/
 
 static unsigned char transmuteU8(char i8) {
   return *(unsigned char*)(&i8);
@@ -86,109 +87,11 @@ _Bool pl2_sliceCmpCStr(pl2_Slice slice, const char *cStr) {
 
 size_t pl2_sliceLen(pl2_Slice slice) {
   assert(slice.end >= slice.start);
-  return slice.end - slice.start;
+  return (size_t)(slice.end - slice.start);
 }
 
 _Bool pl2_isNullSlice(pl2_Slice slice) {
   return slice.start == slice.end;
-}
-
-/*** ---------------- Implementation of pl2_MString ---------------- ***/
-
-static uint32_t BKDRHash(const char *str) {
-  uint32_t hash = 0;
-  char ch = 0;
-  ch = *str++;
-  while (ch) {
-    hash = hash * 13 + ch;
-    ch = *str++;
-  }
-  return hash;
-}
-
-typedef struct st_hash_map_item {
-  struct st_hash_map_item *next;
-  char value[0];
-} HashMapItem;
-
-static HashMapItem *newHashMapItem(const char *value) {
-  HashMapItem *ret = (HashMapItem*)malloc(sizeof(HashMapItem)
-                                          + strlen(value)
-                                          + 1);
-  ret->next = NULL;
-  strcpy(ret->value, value);
-  return ret;
-}
-
-#define HASH_BUCKETS 4096
-typedef struct st_mcontext_impl {
-  HashMapItem *buckets[HASH_BUCKETS];
-} MContextImpl;
-
-pl2_MContext *pl2_mContext(void) {
-  MContextImpl *impl = (MContextImpl*)malloc(sizeof(MContextImpl));
-  memset(impl, 0, sizeof(MContextImpl));
-  return (pl2_MContext*)impl;
-}
-
-void pl2_mContextFree(pl2_MContext *context) {
-  MContextImpl *impl = (MContextImpl*)context;
-  for (uint32_t i = 0; i < HASH_BUCKETS; i++) {
-    HashMapItem *item = impl->buckets[i];
-    while (item != NULL) {
-      HashMapItem *nextItem = item->next;
-      free(item);
-      item = nextItem;
-    }
-  }
-  free(context);
-}
-
-pl2_MString pl2_mString(pl2_MContext *context, const char *string) {
-  MContextImpl *impl = (MContextImpl*)context;
-
-  uint32_t hash = BKDRHash(string);
-  uint32_t bucket = hash % 4096;
-  if (impl->buckets[bucket] == NULL) {
-    impl->buckets[bucket] = newHashMapItem(string);
-    return bucket * 40960 + 1;
-  } else if (strcmp(string, impl->buckets[bucket]->value) == 0) {
-    return bucket * 40960 + 1;
-  } else {
-    HashMapItem *prevItem = impl->buckets[bucket];
-    HashMapItem *curItem = prevItem->next;
-
-    uint32_t idx = 2;
-    while (curItem != NULL) {
-      if (strcmp(string, curItem->value) == 0) {
-        return bucket * 40960 + idx;
-      }
-      prevItem = curItem;
-      curItem = curItem->next;
-      idx += 1;
-    }
-
-    prevItem->next = newHashMapItem(string);
-    return bucket * 40960 + idx;
-  }
-}
-
-const char *pl2_getString(pl2_MContext *context, pl2_MString mstring) {
-  MContextImpl *impl = (MContextImpl*)context;
-
-  uint32_t bucket = mstring / 40960;
-  uint32_t idx = mstring % 40960;
-
-  uint32_t i = 1;
-  HashMapItem *item = impl->buckets[bucket];
-
-  while (i < idx) {
-    i += 1;
-    item = item->next;
-    assert(item != NULL);
-  }
-
-  return item->value;
 }
 
 /*** ----------------- Implementation of pl2_Error ----------------- ***/
@@ -226,6 +129,13 @@ void pl2_errPrintf(pl2_Error *error,
   va_end(ap);
 }
 
+void pl2_dropError(pl2_Error *error) {
+  if (error->extraData) {
+    free(error->extraData);
+  }
+  free(error);
+}
+
 _Bool pl2_isError(pl2_Error *error) {
   return error->errorCode != 0;
 }
@@ -246,13 +156,14 @@ pl2_CmdPart pl2_cmdPart(pl2_Slice prefix, pl2_Slice body) {
   return ret;
 }
 
-pl2_Cmd *pl2_cmd(pl2_CmdPart *parts) {
-  return pl2_cmd4(NULL, NULL, NULL, parts);
+pl2_Cmd *pl2_cmd2(uint16_t line, pl2_CmdPart *parts) {
+  return pl2_cmd5(NULL, NULL, NULL, line, parts);
 }
 
-pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
+pl2_Cmd *pl2_cmd5(pl2_Cmd *prev,
                   pl2_Cmd *next,
                   void *extraData,
+                  uint16_t line,
                   pl2_CmdPart *parts) {
   uint32_t partCount = 0;
   for (pl2_CmdPart *part = parts;
@@ -272,15 +183,28 @@ pl2_Cmd *pl2_cmd4(pl2_Cmd *prev,
   for (uint32_t i = 0; i < partCount; i++) {
     ret->parts[i] = parts[i];
   }
+  ret->line = line;
   memset(ret->parts + partCount, 0, sizeof(pl2_CmdPart));
   return ret;
 }
+
+uint16_t pl2_cmdPartsLen(pl2_Cmd *cmd) {
+  uint16_t acc = 0;
+  pl2_CmdPart *iter = cmd->parts;
+  while (!PL2_EMPTY_PART(iter)) {
+    iter++;
+    acc++;
+  }
+  return acc;
+}
+
+/*** ---------------- Implementation of pl2_Program --------------- ***/
 
 void pl2_initProgram(pl2_Program *program) {
   program->commands = NULL;
 }
 
-void pl2_clearProgram(pl2_Program *program) {
+void pl2_dropProgram(pl2_Program *program) {
   pl2_Cmd *iter = program->commands;
   while (iter != NULL) {
     pl2_Cmd *next = iter->next;
@@ -488,11 +412,13 @@ static pl2_Slice parseId(ParseContext *ctx, pl2_Error *error) {
 }
 
 static pl2_Slice parseStr(ParseContext *ctx, pl2_Error *error) {
-  assert(curChar(ctx) == '"');
+  assert(curChar(ctx) == '"' || curChar(ctx) == '\'');
   nextChar(ctx);
 
   char *start = curCharPos(ctx);
-  while (curChar(ctx) != '"' && !isLineEnd(curChar(ctx))) {
+  while (curChar(ctx) != '"'
+         && curChar(ctx) != '\''
+         && !isLineEnd(curChar(ctx))) {
     if (curChar(ctx) == '\\') {
       nextChar(ctx);
       nextChar(ctx);
@@ -503,7 +429,7 @@ static pl2_Slice parseStr(ParseContext *ctx, pl2_Error *error) {
   char *end = curCharPos(ctx);
   end = shrinkConv(start, end);
   
-  if (curChar(ctx) == '"') {
+  if (curChar(ctx) == '"' || curChar(ctx) == '\'') {
     nextChar(ctx);
   } else {
     pl2_fillError(error, PL2_ERR_UNCLOSED_STR, ctx->line,
@@ -522,17 +448,20 @@ static void checkBufferSize(ParseContext *ctx, pl2_Error *error) {
 }
 
 static void finishLine(ParseContext *ctx, pl2_Error *error) {
-  if (ctx->partUsage) {
-    pl2_fillError(error, PL2_ERR_EMPTY_CMD, ctx->line,
-                  "empty commands are not allowed", NULL);
+  (void)error;
+  if (ctx->partUsage == 0) {
     return;
   }
   if (ctx->listTail == NULL) {
     assert(ctx->program.commands == NULL);
     ctx->program.commands = 
-      ctx->listTail = pl2_cmd(ctx->partBuffer);
+      ctx->listTail = pl2_cmd2(ctx->line, ctx->partBuffer);
   } else {
-    ctx->listTail = pl2_cmd4(ctx->listTail, NULL, NULL, ctx->partBuffer);
+    ctx->listTail = pl2_cmd5(ctx->listTail,
+                             NULL,
+                             NULL,
+                             ctx->line,
+                             ctx->partBuffer);
   }
   memset(ctx->partBuffer, 0,
          sizeof(pl2_CmdPart) * ctx->partBufferSize);
@@ -635,25 +564,6 @@ static char *shrinkConv(char *start, char *end) {
 
 /*** -------------------- Semantic-ver parsing  -------------------- ***/
 
-#define SEMVER_POSTFIX_LEN 15
-
-typedef struct st_sem_ver {
-  uint16_t major;
-  uint16_t minor;
-  uint16_t patch;
-  char postfix[SEMVER_POSTFIX_LEN];
-  _Bool exact;
-} SemVer;
-
-static SemVer zeroVersion(void);
-static _Bool isZeroVersion(SemVer ver);
-static _Bool isAlphaVersion(SemVer ver);
-static _Bool isStableVersion(SemVer ver);
-static SemVer parseSemVer(const char *src, pl2_Error *error);
-static _Bool semverCompatible(SemVer ver1, SemVer ver2);
-static int semverCmp(SemVer ver1, SemVer ver2);
-static void semverToString(SemVer ver, char *buffer);
-
 static const char *parseUint16(const char *src,
                                uint16_t *output,
                                pl2_Error *error);
@@ -662,17 +572,17 @@ static void parseSemVerPostfix(const char *src,
                                char *output,
                                pl2_Error *error);
 
-static SemVer zeroVersion(void) {
-  SemVer ret;
+pl2_SemVer pl2_zeroVersion(void) {
+  pl2_SemVer ret;
   ret.major = 0;
   ret.minor = 0;
   ret.patch = 0;
-  memset(ret.postfix, 0, SEMVER_POSTFIX_LEN);
+  memset(ret.postfix, 0, PL2_SEMVER_POSTFIX_LEN);
   ret.exact = 0;
   return ret;
 }
 
-static _Bool isZeroVersion(SemVer ver) {
+_Bool pl2_isZeroVersion(pl2_SemVer ver) {
   return ver.major == 0
          && ver.minor == 0
          && ver.patch == 0
@@ -680,16 +590,16 @@ static _Bool isZeroVersion(SemVer ver) {
          && ver.exact == 0;
 }
 
-static _Bool isAlphaVersion(SemVer ver) {
+_Bool pl2_isAlpha(pl2_SemVer ver) {
   return ver.postfix[0] != '\0';
 }
 
-static _Bool isStableVersion(SemVer ver) {
-  return !isAlphaVersion(ver) && ver.major != 0;
+_Bool pl2_isStable(pl2_SemVer ver) {
+  return !pl2_isAlpha(ver) && ver.major != 0;
 }
 
-static SemVer parseSemVer(const char *src, pl2_Error *error) {
-  SemVer ret = zeroVersion();
+pl2_SemVer pl2_parseSemVer(const char *src, pl2_Error *error) {
+  pl2_SemVer ret = pl2_zeroVersion();
   if (src[0] == '^') {
     ret.exact = 1;
     src++;
@@ -748,6 +658,63 @@ done:
   return ret;
 }
 
+_Bool pl2_isCompatible(pl2_SemVer require,pl2_SemVer given) {
+  if (strncmp(require.postfix,
+              given.postfix,
+              PL2_SEMVER_POSTFIX_LEN) != 0) {
+    return 0;
+  }
+  if (require.exact) {
+    return require.major == given.major
+           && require.minor == given.minor
+           && require.patch == given.patch;
+  } else if (require.major == given.major) {
+    return (require.minor == given.minor && require.patch < given.patch)
+           || (require.minor < given.minor);
+  } else {
+    return 0;
+  }
+}
+
+pl2_CmpResult pl2_semverCmp(pl2_SemVer ver1, pl2_SemVer ver2) {
+  if (!strncmp(ver1.postfix, ver2.postfix, PL2_SEMVER_POSTFIX_LEN)) {
+    return PL2_CMP_NONE;
+  }
+  
+  if (ver1.major < ver2.major) {
+    return PL2_CMP_LESS;
+  } else if (ver1.major > ver2.major) {
+    return PL2_CMP_GREATER;
+  } else if (ver1.minor < ver2.minor) {
+    return PL2_CMP_LESS;
+  } else if (ver1.minor > ver2.minor) {
+    return PL2_CMP_GREATER;
+  } else if (ver1.patch < ver2.patch) {
+    return PL2_CMP_LESS;
+  } else if (ver1.patch > ver2.patch) {
+    return PL2_CMP_GREATER;
+  } else {
+    return PL2_CMP_EQ;
+  }
+}
+
+void pl2_semverToString(pl2_SemVer ver, char *buffer) {
+  if (ver.postfix[0]) {
+    sprintf(buffer, "%s%u.%u.%u-%s",
+            ver.exact ? "^" : "",
+            ver.major,
+            ver.minor,
+            ver.patch,
+            ver.postfix);
+  } else {
+    sprintf(buffer, "%s%u.%u.%u",
+            ver.exact ? "^" : "",
+            ver.major,
+            ver.minor,
+            ver.patch);
+  }
+}
+
 static const char *parseUint16(const char *src,
                                uint16_t *output,
                                pl2_Error *error) {
@@ -775,7 +742,7 @@ static void parseSemVerPostfix(const char *src,
                   "empty semver postfix", NULL);
     return;
   }
-  for (size_t i = 0; i < SEMVER_POSTFIX_LEN - 1; i++) {
+  for (size_t i = 0; i < PL2_SEMVER_POSTFIX_LEN - 1; i++) {
     if (!(*output++ = *src++)) {
       return;
     }
@@ -787,133 +754,242 @@ static void parseSemVerPostfix(const char *src,
   }
 }
 
-static _Bool semverCompatible(SemVer require, SemVer given) {
-  if (strncmp(require.postfix, given.postfix, SEMVER_POSTFIX_LEN) != 0) {
+/*** ----------------------------- Run ----------------------------- ***/
+
+typedef struct st_run_context {
+  pl2_Program *program;
+  pl2_Cmd *curCmd;
+  void *userContext;
+  
+  void *libHandle;
+  pl2_Language *language;
+} RunContext;
+
+static RunContext *createRunContext(pl2_Program *program);
+static void destroyRunContext(RunContext *context);
+static _Bool cmdHandler(RunContext *context,
+                        pl2_Cmd *cmd,
+                        pl2_Error *error);
+static _Bool loadLanguage(RunContext *context,
+                          pl2_Cmd *cmd,
+                          pl2_Error *error);
+
+void pl2_run(pl2_Program *program, pl2_Error *error) {
+  RunContext *context = createRunContext(program);
+  
+  while (cmdHandler(context, context->curCmd, error)) {
+    if (pl2_isError(error)) {
+      fprintf(stderr, "at line %u: warn %u: %s",
+              error->line, error->errorCode, error->reason);
+    }
+  }
+  
+  destroyRunContext(context);
+}
+
+static RunContext *createRunContext(pl2_Program *program) {
+  RunContext *context = (RunContext*)malloc(sizeof(RunContext));
+  context->program = program;
+  context->curCmd = program->commands;
+  context->userContext = NULL;
+  context->libHandle = NULL;
+  context->language = NULL;
+  return context;
+}
+
+static void destroyRunContext(RunContext *context) {
+  if (context->libHandle != NULL) {
+    if (context->language->atExit != NULL) {
+      context->language->atExit(context->userContext);
+    }
+    context->language = NULL;
+    if (dlclose(context->libHandle) != 0) {
+      fprintf(stderr,
+              "[int/e] error invoking dlclose: %s\n",
+              dlerror());
+    }
+  }
+  free(context);
+}
+
+static _Bool cmdHandler(RunContext *context,
+                        pl2_Cmd *cmd,
+                        pl2_Error *error) {
+  if (cmd == NULL) {
     return 0;
   }
-  if (require.exact) {
-    return require.major == given.major
-           && require.minor == given.minor
-           && require.patch == given.patch;
-  } else if (require.major == given.major) {
-    return (require.minor == given.minor && require.patch < given.patch)
-           || (require.minor < given.minor);
-  } else {
+                          
+  if (pl2_isNullSlice(cmd->parts[0].prefix)) {
+    pl2_Slice cmdBody = cmd->parts[0].body;
+    if (pl2_sliceCmpCStr(cmdBody, "language")) {
+      return loadLanguage(context, cmd, error);
+    } else if (pl2_sliceCmpCStr(cmdBody, "abort")) {
+      return 0;
+    }
+  }
+  
+  if (context->language == NULL) {
+    pl2_errPrintf(error, PL2_ERR_NO_LANG, cmd->line, NULL,
+                  "no language loaded to execute user command");
+    return 1;
+  }
+  
+  for (pl2_SInvokeCmd *iter = context->language->sinvokeCmds;
+       iter != NULL && !PL2_EMPTY_CMD(iter);
+       ++iter) {
+    if (!iter->removed
+        && pl2_sliceCmpCStr(cmd->parts[0].body, iter->cmdName)) {
+      if (iter->deprecated) {
+        fprintf(stderr, "[int/w] using deprecated command: %s\n",
+                iter->cmdName);
+      }
+      const char *callBuffer[256] = { NULL };
+      size_t i = 0;
+      for (pl2_CmdPart *part = cmd->parts;
+           !PL2_EMPTY_PART(part);
+           ++part) {
+        if (!pl2_isNullSlice(part->prefix)) {
+          fprintf(stderr, "[int/w] sinvoke does not support prefix\n");
+        }
+        callBuffer[i] = pl2_unsafeIntoCStr(part->body);
+      }
+      if (iter->stub != NULL) {
+        iter->stub(callBuffer);
+      }
+      context->curCmd = cmd->next;
+      return 1;
+    }
+  }
+  
+  for (pl2_PCallCmd *iter = context->language->pCallCmds;
+       iter != NULL && !PL2_EMPTY_CMD(iter);
+       ++iter) {
+    if (!iter->removed
+        && pl2_sliceCmpCStr(cmd->parts[0].body, iter->cmdName)) {
+      if (iter->deprecated) {
+        fprintf(stderr, "[int/w] using deprecated command: %s\n",
+                iter->cmdName);
+      }
+      if (iter->stub == NULL) {
+        context->curCmd = cmd->next;
+        return 1;
+      }
+      
+      pl2_Cmd *nextCmd = iter->stub(context->program,
+                                    context->userContext,
+                                    cmd,
+                                    error);
+      if (pl2_isError(error)) {
+        return 0;
+      }
+      if (nextCmd == context->language->termCmd) {
+        return 0;
+      }
+      context->curCmd = nextCmd ? nextCmd : cmd->next;
+      return 1;
+    }
+  }
+  
+  if (context->language->fallback == NULL) {
+    pl2_errPrintf(error, PL2_ERR_UNKNWON_CMD, cmd->line, NULL,
+                  "`%s` is not recognized as an internal or external "
+                  "command, operable program or batch file",
+                  pl2_unsafeIntoCStr(cmd->parts[0].body));
     return 0;
   }
-}
-
-static int semverCmp(SemVer ver1, SemVer ver2) {
-  if (!strncmp(ver1.postfix, ver2.postfix, SEMVER_POSTFIX_LEN)) {
-    return 2;
-  }
   
-  if (ver1.major < ver2.major) {
-    return -1;
-  } else if (ver1.major > ver2.major) {
-    return 1;
-  } else if (ver1.minor < ver2.minor) {
-    return -1;
-  } else if (ver1.minor > ver2.minor) {
-    return 1;
-  } else if (ver1.patch < ver2.patch) {
-    return -1;
-  } else if (ver1.patch > ver2.patch) {
-    return 1;
-  } else {
+  pl2_Cmd *nextCmd = context->language->fallback(
+    context->program,
+    context->userContext,
+    cmd,
+    error
+  );
+  
+  if (pl2_isError(error)) {
     return 0;
   }
-}
-
-static void semverToString(SemVer ver, char *buffer) {
-  if (ver.postfix[0]) {
-    sprintf(buffer, "%s%u.%u.%u-%s",
-            ver.exact ? "^" : "",
-            ver.major,
-            ver.minor,
-            ver.patch,
-            ver.postfix);
-  } else {
-    sprintf(buffer, "%s%u.%u.%u",
-            ver.exact ? "^" : "",
-            ver.major,
-            ver.minor,
-            ver.patch);
+  if (nextCmd == context->language->termCmd) {
+    return 0;
   }
+  
+  context->curCmd = nextCmd ? nextCmd : cmd->next;
+  return 1;
 }
 
-/*** ------------- Implementation of PL2 builtin lang  ------------- ***/
-
-typedef struct st_sinvoke_cmd_info {
-  pl2_SInvokeCmd cmd;
-  SemVer lastUpdated;
-  pl2_Slice ffiFuncName;
-} SInvokeCmdInfo;
-
-typedef struct st_pcall_cmd_info {
-  pl2_PCallCmd cmd;
-  SemVer lastUpdated;
-  pl2_Slice ffiFuncName;
-} PCallCmdInfo;
-
-typedef struct st_init_info {
-  pl2_InitStub *stub;
-  SemVer lastUpdated;
-  pl2_Slice ffiFuncName;
-} InitCmdInfo;
-
-typedef struct st_atexit_info {
-  pl2_AtexitStub *stub;
-  SemVer lastUpdated;
-  pl2_Slice ffiFuncName;
-} AtExitCmdInfo;
-
-typedef struct st_builtin_lang_context {
-  pl2_Slice fullName;
-  pl2_Slice clibName;
-  pl2_Slice *tags;
-  pl2_Slice *authors;
-  pl2_Slice license;
-  pl2_Slice description;
-  
-  SemVer currentVersion;
-  SemVer requiredVersion;
-  
-  uint8_t sinvokeFuncUsage;
-  uint8_t pcallFuncUsage;
-  SInvokeCmdInfo sinvokeFuncInfo[256];
-  PCallCmdInfo pcallFuncInfo[256];
-  PCallCmdInfo fallbackFuncInfo;
-  
-  InitCmdInfo initCmdInfo;
-  AtExitCmdInfo atExitCmdInfo;
-} BuiltinLangContext;
-
-typedef enum e_cmd_convention {
-  CONV_SINVOKE = 0,
-  CONV_PCALL   = 1,
-  
-  CONV_INVALID = 255
-} CmdConvention;
-
-static BuiltinLangContext *createBuiltinLangContext(void);
-static CmdConvention resolveConvention(pl2_Slice str);
-
-static BuiltinLangContext *createBuiltinLangContext(void) {
-  BuiltinLangContext *ret = 
-    (BuiltinLangContext*)malloc(sizeof(BuiltinLangContext));
-  memset(ret, 0, sizeof(BuiltinLangContext));
-  return ret;
-}
-
-static CmdConvention resolveConvention(pl2_Slice str) {
-  if (pl2_sliceCmpCStr(str, "sinvoke")) {
-    return CONV_SINVOKE;
-  } else if (pl2_sliceCmpCStr(str, "pcall")) {
-    return CONV_SINVOKE;
-  } else {
-    return CONV_INVALID;
+static _Bool loadLanguage(RunContext *context,
+                          pl2_Cmd *cmd,
+                          pl2_Error *error) {
+  uint16_t partsLen = pl2_cmdPartsLen(cmd);
+  if (partsLen != 3) {
+    pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
+                  "language: expected 2 arguments, got %u",
+                  partsLen - 1);
+    return 0;
   }
+  
+  if (!pl2_isNullSlice(cmd->parts[1].prefix)
+      || !pl2_isNullSlice(cmd->parts[2].prefix)) {
+    pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
+                  "language: prefixing not allowed");
+    return 0;
+  }
+  
+  const char *langId = pl2_unsafeIntoCStr(cmd->parts[1].body);
+  pl2_SemVer langVer = pl2_parseSemVer(
+    pl2_unsafeIntoCStr(cmd->parts[2].body),
+    error
+  );
+  if (pl2_isError(error)) {
+    return 0;
+  }
+  
+  static char buffer[4096] = "./lib";
+  strcat(buffer, langId);
+  strcat(buffer, ".so");
+  context->libHandle = dlopen(buffer, RTLD_NOW);
+  if (context->libHandle == NULL) {
+    char *pl2Home = getenv("PL2_HOME");
+    if (pl2Home != NULL) {
+      strcpy(buffer, pl2Home);
+      static char buffer[4096] = "/lib";
+      strcat(buffer, langId);
+      strcat(buffer, ".so");
+      context->libHandle = dlopen(buffer, RTLD_NOW);
+    }
+  }
+  
+  if (context->libHandle == NULL) {
+    pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
+                  "cannot load language library `%s`: %s",
+                  langId, dlerror());
+    return 0;
+  }
+  
+  void *loadPtr = dlsym(
+    context->libHandle,
+    "pl2ext_loadLanguage"
+  );
+  if (loadPtr == NULL) {
+    pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
+                  "cannot locate `%s` on library `%s`: %s",
+                  "pl2ext_loadLanguage", langId, dlerror());
+    return 0;
+  }
+  
+  pl2_LoadLanguage *load = (pl2_LoadLanguage*)loadPtr;
+  
+  context->language = load(langVer, error);
+  if (pl2_isError(error)) {
+    return 0;
+  }
+  
+  if (context->language->init != NULL) {
+    context->userContext = context->language->init(error);
+    if (pl2_isError(error)) {
+      return 0;
+    }
+  }
+  
+  context->curCmd = cmd->next;
+  return 1;
 }
-
-

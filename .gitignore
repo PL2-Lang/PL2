@@ -2,3 +2,5 @@
 *.o
 pl2
 pl2.exe
+*.so
+*.txt
