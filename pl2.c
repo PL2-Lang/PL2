@@ -55,7 +55,9 @@ char *pl2_unsafeIntoCStr(pl2_Slice slice) {
   if (pl2_isNullSlice(slice)) {
     return NULL;
   }
-  *(char*)slice.end = '\0';
+  if (*(char*)slice.end != '\0') {
+    *(char*)slice.end = '\0';
+  }
   return (char*)slice.start;
 }
 
@@ -763,6 +765,7 @@ typedef struct st_run_context {
   
   void *libHandle;
   pl2_Language *language;
+  _Bool ownLanguage;
 } RunContext;
 
 static RunContext *createRunContext(pl2_Program *program);
@@ -773,6 +776,9 @@ static _Bool cmdHandler(RunContext *context,
 static _Bool loadLanguage(RunContext *context,
                           pl2_Cmd *cmd,
                           pl2_Error *error);
+static pl2_Language *ezLoad(void *libHandle,
+                            const char **cmdNames,
+                            pl2_Error *error);
 
 void pl2_run(pl2_Program *program, pl2_Error *error) {
   RunContext *context = createRunContext(program);
@@ -799,10 +805,17 @@ static RunContext *createRunContext(pl2_Program *program) {
 
 static void destroyRunContext(RunContext *context) {
   if (context->libHandle != NULL) {
-    if (context->language->atExit != NULL) {
-      context->language->atExit(context->userContext);
+    if (context->language != NULL) {
+      if (context->language->atExit != NULL) {
+        context->language->atExit(context->userContext);
+      }
+      if (context->ownLanguage) {
+        free(context->language->sinvokeCmds);
+        free(context->language->pCallCmds);
+        free(context->language);
+      }
+      context->language = NULL;
     }
-    context->language = NULL;
     if (dlclose(context->libHandle) != 0) {
       fprintf(stderr,
               "[int/e] error invoking dlclose: %s\n",
@@ -906,6 +919,14 @@ static _Bool cmdHandler(RunContext *context,
     error
   );
   
+  if (nextCmd == context->language->termCmd) {
+    pl2_errPrintf(error, PL2_ERR_UNKNWON_CMD, cmd->line, NULL,
+                  "`%s` is not recognized as an internal or external "
+                  "command, operable program or batch file",
+                  pl2_unsafeIntoCStr(cmd->parts[0].body));
+    return 0;
+  }
+  
   if (pl2_isError(error)) {
     return 0;
   }
@@ -958,7 +979,7 @@ static _Bool loadLanguage(RunContext *context,
     char *pl2Home = getenv("PL2_HOME");
     if (pl2Home != NULL) {
       strcpy(buffer, pl2Home);
-      static char buffer[4096] = "/lib";
+      strcat(buffer, "/lib");
       strcat(buffer, langId);
       strcat(buffer, ".so");
       context->libHandle = dlopen(buffer, RTLD_NOW);
@@ -977,26 +998,89 @@ static _Bool loadLanguage(RunContext *context,
     "pl2ext_loadLanguage"
   );
   if (loadPtr == NULL) {
-    pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
-                  "language: cannot locate `%s` on library `%s`: %s",
-                  "pl2ext_loadLanguage", langId, dlerror());
-    return 0;
+    void *ezLoadPtr = dlsym(
+      context->libHandle,
+      "pl2ezload"
+    );
+    
+    if (ezLoadPtr == NULL) {
+      pl2_errPrintf(error, PL2_ERR_LOAD_LANG, cmd->line, NULL,
+                  "language: cannot locate `%s` or `%s` on library `%s`:"
+                  " %s",
+                  "pl2ext_loadLanguage", "pl2ezload", langId, dlerror());
+      return 0;
+    }
+    
+    pl2_EasyLoadLanguage *load = (pl2_EasyLoadLanguage*)ezLoadPtr;
+    context->language = ezLoad(context->libHandle, load(), error);
+    if (pl2_isError(error)) {
+      return 0;
+    }
+    context->ownLanguage = 1;
+  } else {
+    pl2_LoadLanguage *load = (pl2_LoadLanguage*)loadPtr;
+    context->language = load(langVer, error);
+    if (pl2_isError(error)) {
+      return 0;
+    }
+    context->ownLanguage = 0;
   }
   
-  pl2_LoadLanguage *load = (pl2_LoadLanguage*)loadPtr;
-  
-  context->language = load(langVer, error);
-  if (pl2_isError(error)) {
-    return 0;
-  }
-  
-  if (context->language->init != NULL) {
+  if (context->language != NULL && context->language->init != NULL) {
     context->userContext = context->language->init(error);
     if (pl2_isError(error)) {
       return 0;
     }
   }
-  
+
   context->curCmd = cmd->next;
   return 1;
+}
+
+static pl2_Language *ezLoad(void *libHandle,
+                            const char **cmdNames,
+                            pl2_Error *error) {
+  if (cmdNames == NULL || cmdNames[0] == NULL) {
+    return NULL;
+  }
+  uint16_t count = 0;
+  for (const char **iter = cmdNames; *iter != NULL; iter++) {
+    ++count;
+  }
+  
+  pl2_Language *ret = (pl2_Language*)malloc(sizeof(pl2_Language));
+  ret->langName = "unknown";
+  ret->langInfo = "anonymous language loaded by ezload";
+  ret->termCmd = NULL;
+  ret->init = NULL;
+  ret->atExit = NULL;
+  ret->pCallCmds = NULL;
+  ret->fallback = NULL;
+  ret->sinvokeCmds = (pl2_SInvokeCmd*)malloc(
+    sizeof(pl2_SInvokeCmd) * (count + 1)
+  );
+  
+  memset(ret->sinvokeCmds, 0, (count + 1) * sizeof(pl2_SInvokeCmd));
+  static char nameBuffer[512];
+  for (uint16_t i = 0; i < count; i++) {
+    const char *cmdName = cmdNames[i];
+    strcpy(nameBuffer, "pl2ez_");
+    strcat(nameBuffer, cmdName);
+    void *ptr = dlsym(libHandle, nameBuffer);
+    if (ptr == NULL) {
+      pl2_errPrintf(error, PL2_ERR_LOAD_LANG, 0, NULL,
+                    "language: ezload: cannot load function `%s`: %s",
+                    nameBuffer, dlerror());
+      free(ret->sinvokeCmds);
+      free(ret);
+      return NULL;
+    }
+
+    ret->sinvokeCmds[i].cmdName = cmdName;
+    ret->sinvokeCmds[i].stub = (pl2_SInvokeCmdStub*)ptr;
+    ret->sinvokeCmds[i].deprecated = 0;
+    ret->sinvokeCmds[i].removed = 0;
+  }
+
+  return ret;
 }

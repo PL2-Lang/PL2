@@ -55,6 +55,7 @@ int main(int argc, const char *argv[]) {
     return -1;
   }
   
+  int ret = 0;
   pl2_run(&program, error);
   if (pl2_isError(error)) {
     fprintf(stderr, 
@@ -62,12 +63,14 @@ int main(int argc, const char *argv[]) {
             error->errorCode,
             error->line,
             error->reason);
-    return -1;
+    ret = -1;
   }
   
   pl2_dropProgram(&program);
   pl2_dropError(error);
   free(buffer);
   fclose(fp);
+  
+  return ret;
 }
 

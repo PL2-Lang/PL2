@@ -206,6 +206,7 @@ typedef struct st_pl2_langauge {
 
 typedef pl2_Language* (pl2_LoadLanguage)(pl2_SemVer version,
                                          pl2_Error *error);
+typedef const char **(pl2_EasyLoadLanguage)(void);
 
 /*** ----------------------------- Run ----------------------------- ***/
 

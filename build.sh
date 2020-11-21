@@ -25,3 +25,7 @@ clang echo.c \
   -Wno-zero-length-array \
   -Wno-padded \
   -fPIC -shared -o libecho.so
+
+clang ezecho.c \
+  -Wall -Wextra \
+  -fPIC -shared -o libezecho.so
