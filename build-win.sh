@@ -8,33 +8,28 @@ if [ "$?" == "0" ]; then
     -Wno-format-nonliteral \
     -Wno-cast-qual \
     -Wno-padded \
-    -fPIC -shared -ldl -o libpl2.so
+    -fPIC -shared -ldl -o libpl2.dll
   clang main.c \
     -Weverything \
     -Wno-zero-length-array \
     -Wno-padded \
-    -L. -lpl2 \
-    -o pl2
+    -L. -lpl2 -o pl2
   clang pldbg.c \
     -Weverything \
     -Wno-zero-length-array \
     -Wno-padded \
-    -L. -lpl2 \
-    -fPIC -shared -o libpldbg.so
+    -L. -lpl2 -o pl2
+    -fPIC -shared -o libpldbg.dll
   clang echo.c \
     -Weverything \
     -Wno-zero-length-array \
     -Wno-padded \
-    -L. -lpl2 \
-    -fPIC -shared -o libecho.so
-  clang ezecho.c \
-    -Wall -Wextra \
-    -fPIC -shared -o libezecho.so
+    -L. -lpl2 -o pl2
+    -fPIC -shared -o libecho.dll
 else
-  cc pl2.c -Wall -Wextra -fPIC -shared -ldl -o libpl2.so
+  cc pl2.c -Wall -Wextra -fPIC -shared -ldl -o libpl2.dll
   cc main.c -Wall -Wextra -L. -lpl2 -o pl2
-  cc pldbg.c -Wall -Wextra -fPIC -shared -L. -lpl2  -o libpldbg.so
-  cc echo.c -Wall -Wextra -fPIC -shared -L. -lpl2 -o libecho.so
-  cc ezecho.c -Wall -Wextra -fPIC -shared -o libezecho.so
+  cc pldbg.c -Wall -Wextra -fPIC -shared -L. -lpl2  -o libpldbg.dll
+  cc echo.c -Wall -Wextra -fPIC -shared -L. -lpl2 -o libecho.dll
 fi
 

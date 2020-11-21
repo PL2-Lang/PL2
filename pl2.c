@@ -353,7 +353,7 @@ static void parseQuesMark(ParseContext *ctx, pl2_Error *error) {
   nextChar(ctx);
 
   const char *start = curCharPos(ctx);
-  while (isalnum(curChar(ctx))) {
+  while (isalnum((int)curChar(ctx))) {
     nextChar(ctx);
   }
   const char *end = curCharPos(ctx);
@@ -720,13 +720,13 @@ void pl2_semverToString(pl2_SemVer ver, char *buffer) {
 static const char *parseUint16(const char *src,
                                uint16_t *output,
                                pl2_Error *error) {
-  if (!isdigit(src[0])) {
+  if (!isdigit((int)src[0])) {
     pl2_fillError(error, PL2_ERR_SEMVER_PARSE, 0,
                   "expected numberic version", NULL);
     return NULL;
   }
   *output = 0;
-  while (isdigit(src[0])) {
+  while (isdigit((int)src[0])) {
     *output *= 10;
     *output += src[0] - '0';
     ++src;
