@@ -8,7 +8,7 @@ int main(int argc, const char *argv[]) {
     "PL2 programming language platform\n"
     "  Author:  ICEY<icey@icey.tech>\n"
     "  Version: v%u.%u.%u %s\n"
-    "  License: AGPLv3\n\n",
+    "  License: LDWPL (Limited Derivative Work Public License)\n\n",
     PL2_VER_MAJOR,
     PL2_VER_MINOR,
     PL2_VER_PATCH,
