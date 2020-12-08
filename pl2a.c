@@ -399,7 +399,6 @@ static void finishLine(ParseContext *ctx, pl2a_Error *error) {
   }
   memset(ctx->partBuffer, 0, sizeof(Slice) * ctx->partBufferSize);
   ctx->partUsage = 0;
-  fprintf(stderr, "ch = %d\n", curChar(ctx));
 }
 
 static pl2a_Cmd *cmdFromSlices2(pl2a_SourceInfo sourceInfo,

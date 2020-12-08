@@ -50,15 +50,13 @@ int main(int argc, const char *argv[]) {
   pl2a_Error *error = pl2a_errorBuffer(512);
   pl2a_Program program = pl2a_parse(buffer, error);
   if (pl2a_isError(error)) {
-    fprintf(stderr, 
+    fprintf(stderr,
             "parsing error %d: line %d: %s\n",
             error->errorCode,
             error->sourceInfo.line,
             error->reason);
     return -1;
   }
-
-  pl2a_debugPrintProgram(&program);
 
   int ret = 0;
   pl2a_run(&program, error);

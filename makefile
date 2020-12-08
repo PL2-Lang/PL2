@@ -2,7 +2,15 @@ CFLAGS := $(CFLAGS) -Wall -Wextra -Wc++-compat
 
 LOG := sh -c 'printf "\\t$$0\\t$$1\\n"'
 
-all: libpl2a.so libpl2ext.so pl2a libecho.so libpldbg.so
+all: libpl2a.so libpl2ext.so pl2a libecho.so libpldbg.so libezecho.so
+
+libezecho.so: ezecho.o
+	@$(LOG) LINK libezecho.so
+	@$(CC) ezecho.o -shared -o libezecho.so
+
+ezecho.o: ezecho.c
+	@$(LOG) CC ezecho.c
+	@$(CC) $(CFLAGS) ezecho.c -c -fPIC -o ezecho.o
 
 libecho.so: echo.o libpl2a.so
 	@$(LOG) LINK libecho.so
