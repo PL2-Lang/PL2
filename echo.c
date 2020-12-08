@@ -12,7 +12,8 @@ pl2a_Language* pl2ext_loadLanguage(pl2a_SemVer version, pl2a_Error *error) {
 
   static pl2a_SInvokeCmd sinvokeCmds[] = {
     /* cmdName  stub        deprecated  removed*/
-    { "echo",   echo_1_0_0, 0,          0 }
+    { "echo",   echo_1_0_0, 0,          0    },
+    { NULL,     NULL,       NULL,       NULL }
   };
 
   static pl2a_Language ret = {

@@ -57,7 +57,9 @@ int main(int argc, const char *argv[]) {
             error->reason);
     return -1;
   }
-  
+
+  pl2a_debugPrintProgram(&program);
+
   int ret = 0;
   pl2a_run(&program, error);
   if (pl2a_isError(error)) {

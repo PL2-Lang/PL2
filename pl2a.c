@@ -167,7 +167,7 @@ void pl2a_debugPrintProgram(const pl2a_Program *program) {
   fprintf(stderr, "program commands\n");
   pl2a_Cmd *cmd = program->commands;
   while (cmd != NULL) {
-    fprintf(stderr, "\t[");
+    fprintf(stderr, "\t%s [", cmd->cmd);
     for (uint16_t i = 0; cmd->args[i] != NULL; i++) {
       char *arg = cmd->args[i];
       fprintf(stderr, "`%s`, ", arg);
@@ -385,19 +385,21 @@ static void checkBufferSize(ParseContext *ctx, pl2a_Error *error) {
 
 static void finishLine(ParseContext *ctx, pl2a_Error *error) {
   (void)error;
+  nextChar(ctx);
   if (ctx->partUsage == 0) {
     return;
   }
   if (ctx->listTail == NULL) {
     assert(ctx->program.commands == NULL);
-    ctx->program.commands = 
-      ctx->listTail = cmdFromSlices5(ctx->listTail, NULL, NULL,
-                                     ctx->sourceInfo, ctx->partBuffer);
+    ctx->program.commands =
+      ctx->listTail = cmdFromSlices2(ctx->sourceInfo, ctx->partBuffer);
   } else {
-    ctx->listTail = cmdFromSlices2(ctx->sourceInfo, ctx->partBuffer);
+    ctx->listTail = cmdFromSlices5(ctx->listTail, NULL, NULL,
+                                   ctx->sourceInfo, ctx->partBuffer);
   }
   memset(ctx->partBuffer, 0, sizeof(Slice) * ctx->partBufferSize);
   ctx->partUsage = 0;
+  fprintf(stderr, "ch = %d\n", curChar(ctx));
 }
 
 static pl2a_Cmd *cmdFromSlices2(pl2a_SourceInfo sourceInfo,
@@ -860,8 +862,8 @@ static _Bool cmdHandler(RunContext *context,
   
   if (context->language->fallback == NULL) {
     pl2a_errPrintf(error, PL2A_ERR_UNKNWON_CMD, cmd->sourceInfo, NULL,
-                  "`%s` is not recognized as an internal or external "
-                  "command, operable program or batch file",
+                   "`%s` is not recognized as an internal or external "
+                   "command, operable program or batch file",
                    cmd->cmd);
     return 0;
   }
