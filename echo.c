@@ -1,21 +1,21 @@
-#include "pl2.h"
+#include "pl2a.h"
 #include <stdio.h>
 
-extern pl2_Language*
-pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error);
+extern pl2a_Language*
+pl2ext_loadLanguage(pl2a_SemVer version, pl2a_Error *error);
 
 static void echo_1_0_0(const char *args[]);
 
-pl2_Language* pl2ext_loadLanguage(pl2_SemVer version, pl2_Error *error) {
+pl2a_Language* pl2ext_loadLanguage(pl2a_SemVer version, pl2a_Error *error) {
   (void)version;
   (void)error;
 
-  static pl2_SInvokeCmd sinvokeCmds[] = {
+  static pl2a_SInvokeCmd sinvokeCmds[] = {
     /* cmdName  stub        deprecated  removed*/
     { "echo",   echo_1_0_0, 0,          0 }
   };
 
-  static pl2_Language ret = {
+  static pl2a_Language ret = {
     /*langName    = */ "The Echo Language",
     /*langInfo    = */ "This language contains an echo command only",
     /*termCmd     = */ NULL,

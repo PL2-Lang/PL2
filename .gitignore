@@ -1,7 +1,12 @@
 *.h.gch
 *.o
-pl2
-pl2.exe
+pl2a
+pl2a.exe
 *.so
+*.a
+*.lib
 *.dll
 *.txt
+
+# 傻逼 IDEA 能不能不要问我要不添加你那个破 .idea，要不要添加你心里没点逼数吗，操你妈
+.idea/
