@@ -9,6 +9,32 @@
 #include <string.h>
 #include <stdarg.h>
 
+/*** ----------------- Implementation of versioning ---------------- ***/
+
+const char *pl2a_getLocaleName(void) {
+  static char *lang = NULL;
+  static const char *ret = NULL;
+  if (lang == NULL) {
+    lang = getenv("LANG");
+    if (lang == NULL) {
+      lang = "en";
+    }
+    if (!strncmp(lang, "zh", 2)) {
+      ret = PL2_EDITION_CN;
+    } else if (!strncmp(lang, "ru", 2)) {
+      ret = PL2_EDITION_RU;
+    } else if (!strncmp(lang, "ko", 2)) {
+      ret =  PL2_EDITION_KR;
+    } else if (!strncmp(lang, "ja", 2)) {
+      ret = PL2_EDITION_JP;
+    } else {
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
 /*** ----------------- Transmute any char to uchar ----------------- ***/
 
 static unsigned char transmuteU8(char i8) {
@@ -18,8 +44,8 @@ static unsigned char transmuteU8(char i8) {
 /*** ------------------- Implementation of slice ------------------- ***/
 
 typedef struct st_slice {
-    char *start;
-    char *end;
+  char *start;
+  char *end;
 } Slice;
 
 static Slice slice(char *start, char *end);
@@ -64,7 +90,11 @@ static _Bool isNullSlice(Slice slice) {
 
 pl2a_Error *pl2a_errorBuffer(uint16_t strBufferSize) {
   pl2a_Error *ret = (pl2a_Error*)malloc(sizeof(pl2a_Error) + strBufferSize);
+  if (ret == NULL) {
+    return NULL;
+  }
   memset(ret, 0, sizeof(pl2a_Error) + strBufferSize);
+  ret->errorBufferSize = strBufferSize;
   return ret;
 }
 
@@ -77,9 +107,13 @@ void pl2a_errPrintf(pl2a_Error *error,
   error->errorCode = errorCode;
   error->extraData = extraData;
   error->sourceInfo = sourceInfo;
+  if (error->errorBufferSize == 0) {
+    return;
+  }
+
   va_list ap;
   va_start(ap, fmt);
-  vsprintf(error->reason, fmt, ap);
+  vsnprintf(error->reason, error->errorBufferSize, fmt, ap);
   va_end(ap);
 }
 
@@ -120,6 +154,9 @@ pl2a_Cmd *pl2a_cmd6(pl2a_Cmd *prev,
 
   pl2a_Cmd *ret = (pl2a_Cmd*)malloc(sizeof(pl2a_Cmd) +
                                     (argLen + 1) * sizeof(char*));
+  if (ret == NULL) {
+    return NULL;
+  }
   ret->prev = prev;
   if (prev != NULL) {
     prev->next = ret;
@@ -187,8 +224,8 @@ typedef enum e_parse_mode {
 
 typedef enum e_ques_cmd {
   QUES_INVALID = 0,
-  QUES_BEGIN = 1,
-  QUES_END   = 2
+  QUES_BEGIN   = 1,
+  QUES_END     = 2
 } QuesCmd;
 
 typedef struct st_parse_context {
@@ -201,12 +238,13 @@ typedef struct st_parse_context {
 
   pl2a_SourceInfo sourceInfo;
 
-  uint32_t partBufferSize;
-  uint32_t partUsage;
-  Slice partBuffer[0];
+  uint32_t parseBufferSize;
+  uint32_t parseBufferUsage;
+  Slice parseBuffer[0];
 } ParseContext;
 
-static ParseContext *createParseContext(char *src);
+static ParseContext *createParseContext(char *src,
+                                        uint16_t parseBufferSize);
 static void parseLine(ParseContext *ctx, pl2a_Error *error);
 static void parseQuesMark(ParseContext *ctx, pl2a_Error *error);
 static void parsePart(ParseContext *ctx, pl2a_Error *error);
@@ -230,8 +268,10 @@ static _Bool isIdChar(char ch);
 static _Bool isLineEnd(char ch);
 static char *shrinkConv(char *start, char *end);
 
-pl2a_Program pl2a_parse(char *source, pl2a_Error *error) {
-  ParseContext *context = createParseContext(source);
+pl2a_Program pl2a_parse(char *source,
+                        uint16_t parseBufferSize,
+                        pl2a_Error *error) {
+  ParseContext *context = createParseContext(source, parseBufferSize);
 
   while (curChar(context) != '\0') {
     parseLine(context, error);
@@ -245,10 +285,14 @@ pl2a_Program pl2a_parse(char *source, pl2a_Error *error) {
   return ret;
 }
 
-static ParseContext *createParseContext(char *src) {
+static ParseContext *createParseContext(char *src,
+                                        uint16_t parseBufferSize) {
   ParseContext *ret = (ParseContext*)malloc(
-    sizeof(ParseContext) + 512 * sizeof(Slice)
+    sizeof(ParseContext) + parseBufferSize * sizeof(Slice)
   );
+  if (ret == NULL) {
+    return NULL;
+  }
 
   pl2a_initProgram(&ret->program);
   ret->listTail = NULL;
@@ -257,9 +301,9 @@ static ParseContext *createParseContext(char *src) {
   ret->sourceInfo = pl2a_sourceInfo("<unknown-file>", 1);
   ret->mode = PARSE_SINGLE_LINE;
 
-  ret->partBufferSize = 512;
-  ret->partUsage = 0;
-  memset(ret->partBuffer, 0, 512 * sizeof(Slice));
+  ret->parseBufferSize = parseBufferSize;
+  ret->parseBufferUsage = 0;
+  memset(ret->parseBuffer, 0, parseBufferSize * sizeof(Slice));
   return ret;
 }
 
@@ -335,7 +379,7 @@ static void parsePart(ParseContext *ctx, pl2a_Error *error) {
     return;
   }
 
-  ctx->partBuffer[ctx->partUsage++] = part;
+  ctx->parseBuffer[ctx->parseBufferUsage++] = part;
 }
 
 static Slice parseId(ParseContext *ctx, pl2a_Error *error) {
@@ -365,7 +409,7 @@ static Slice parseStr(ParseContext *ctx, pl2a_Error *error) {
   }
   char *end = curCharPos(ctx);
   end = shrinkConv(start, end);
-  
+
   if (curChar(ctx) == '"' || curChar(ctx) == '\'') {
     nextChar(ctx);
   } else {
@@ -377,7 +421,7 @@ static Slice parseStr(ParseContext *ctx, pl2a_Error *error) {
 }
 
 static void checkBufferSize(ParseContext *ctx, pl2a_Error *error) {
-  if (ctx->partBufferSize <= ctx->partUsage + 1) {
+  if (ctx->parseBufferSize <= ctx->parseBufferUsage + 1) {
     pl2a_errPrintf(error, PL2A_ERR_UNCLOSED_BEGIN, ctx->sourceInfo,
                    NULL, "command parts exceed internal parsing buffer");
   }
@@ -385,20 +429,26 @@ static void checkBufferSize(ParseContext *ctx, pl2a_Error *error) {
 
 static void finishLine(ParseContext *ctx, pl2a_Error *error) {
   (void)error;
+
+  pl2a_SourceInfo sourceInfo = ctx->sourceInfo;
   nextChar(ctx);
-  if (ctx->partUsage == 0) {
+  if (ctx->parseBufferUsage == 0) {
     return;
   }
   if (ctx->listTail == NULL) {
     assert(ctx->program.commands == NULL);
     ctx->program.commands =
-      ctx->listTail = cmdFromSlices2(ctx->sourceInfo, ctx->partBuffer);
+      ctx->listTail = cmdFromSlices2(ctx->sourceInfo, ctx->parseBuffer);
   } else {
     ctx->listTail = cmdFromSlices5(ctx->listTail, NULL, NULL,
-                                   ctx->sourceInfo, ctx->partBuffer);
+                                   ctx->sourceInfo, ctx->parseBuffer);
   }
-  memset(ctx->partBuffer, 0, sizeof(Slice) * ctx->partBufferSize);
-  ctx->partUsage = 0;
+  if (ctx->listTail == NULL) {
+    pl2a_errPrintf(error, PL2A_ERR_MALLOC, sourceInfo, 0,
+                   "failed allocating pl2a_Cmd");
+  }
+  memset(ctx->parseBuffer, 0, sizeof(Slice) * ctx->parseBufferSize);
+  ctx->parseBufferUsage = 0;
 }
 
 static pl2a_Cmd *cmdFromSlices2(pl2a_SourceInfo sourceInfo,
@@ -416,6 +466,10 @@ static pl2a_Cmd *cmdFromSlices5(pl2a_Cmd *prev,
 
   pl2a_Cmd *ret = (pl2a_Cmd*)malloc(sizeof(pl2a_Cmd) +
                                     partCount * sizeof(char*));
+  if (ret == NULL) {
+    return NULL;
+  }
+
   ret->prev = prev;
   if (prev != NULL) {
     prev->next = ret;
@@ -567,7 +621,7 @@ pl2a_SemVer pl2a_parseSemVer(const char *src, pl2a_Error *error) {
     ret.exact = 1;
     src++;
   }
-  
+
   src = parseUint16(src, &ret.major, error);
   if (pl2a_isError(error)) {
     pl2a_errPrintf(error, PL2A_ERR_SEMVER_PARSE,
@@ -584,7 +638,7 @@ pl2a_SemVer pl2a_parseSemVer(const char *src, pl2a_Error *error) {
                    "expected `.`, got `%c`", src[0]);
     goto done;
   }
-  
+
   src++;
   src = parseUint16(src, &ret.minor, error);
   if (pl2a_isError(error)) {
@@ -602,7 +656,7 @@ pl2a_SemVer pl2a_parseSemVer(const char *src, pl2a_Error *error) {
                    "expected `.`, got `%c`", src[0]);
     goto done;
   }
-  
+
   src++;
   src = parseUint16(src, &ret.patch, error);
   if (pl2a_isError(error)) {
@@ -619,28 +673,28 @@ pl2a_SemVer pl2a_parseSemVer(const char *src, pl2a_Error *error) {
                    "expected `-` or `\\0`, got `%c`",
                    src[0]);
     goto done;
-  } 
-  
+  }
+
 parse_postfix:
   parseSemVerPostfix(src, ret.postfix, error);
-  
+
 done:
   return ret;
 }
 
-_Bool pl2a_isCompatible(pl2a_SemVer require,pl2a_SemVer given) {
-  if (strncmp(require.postfix,
-              given.postfix,
+_Bool pl2a_isCompatible(pl2a_SemVer expected, pl2a_SemVer actual) {
+  if (strncmp(expected.postfix,
+              actual.postfix,
               PL2A_SEMVER_POSTFIX_LEN) != 0) {
     return 0;
   }
-  if (require.exact) {
-    return require.major == given.major
-           && require.minor == given.minor
-           && require.patch == given.patch;
-  } else if (require.major == given.major) {
-    return (require.minor == given.minor && require.patch < given.patch)
-           || (require.minor < given.minor);
+  if (expected.exact) {
+    return expected.major == actual.major
+           && expected.minor == actual.minor
+           && expected.patch == actual.patch;
+  } else if (expected.major == actual.major) {
+    return (expected.minor == actual.minor && expected.patch < actual.patch)
+            || (expected.minor < actual.minor);
   } else {
     return 0;
   }
@@ -650,7 +704,7 @@ pl2a_CmpResult pl2a_semverCmp(pl2a_SemVer ver1, pl2a_SemVer ver2) {
   if (!strncmp(ver1.postfix, ver2.postfix, PL2A_SEMVER_POSTFIX_LEN)) {
     return PL2A_CMP_NONE;
   }
-  
+
   if (ver1.major < ver2.major) {
     return PL2A_CMP_LESS;
   } else if (ver1.major > ver2.major) {
@@ -733,7 +787,7 @@ typedef struct st_run_context {
   pl2a_Program *program;
   pl2a_Cmd *curCmd;
   void *userContext;
-  
+
   void *libHandle;
   pl2a_Language *language;
   _Bool ownLanguage;
@@ -753,19 +807,27 @@ static pl2a_Language *ezLoad(void *libHandle,
 
 void pl2a_run(pl2a_Program *program, pl2a_Error *error) {
   RunContext *context = createRunContext(program);
-  
+  if (context == NULL) {
+    pl2a_errPrintf(error, PL2A_ERR_MALLOC, pl2a_sourceInfo(NULL, 0),
+                   NULL, "run: cannot allocate memory for run context");
+    return;
+  }
+
   while (cmdHandler(context, context->curCmd, error)) {
     if (pl2a_isError(error)) {
-      fprintf(stderr, "at line %u: warn %u: %s",
-              error->sourceInfo.line, error->errorCode, error->reason);
+      break;
     }
   }
-  
+
   destroyRunContext(context);
 }
 
 static RunContext *createRunContext(pl2a_Program *program) {
   RunContext *context = (RunContext*)malloc(sizeof(RunContext));
+  if (context == NULL) {
+    return NULL;
+  }
+
   context->program = program;
   context->curCmd = program->commands;
   context->userContext = NULL;
@@ -788,9 +850,7 @@ static void destroyRunContext(RunContext *context) {
       context->language = NULL;
     }
     if (dlclose(context->libHandle) != 0) {
-      fprintf(stderr,
-              "[int/e] error invoking dlclose: %s\n",
-              dlerror());
+      fprintf(stderr, "[int/e] error invoking dlclose: %s\n", dlerror());
     }
   }
   free(context);
@@ -808,15 +868,15 @@ static _Bool cmdHandler(RunContext *context,
   } else if (!strcmp(cmd->cmd, "abort")) {
     return 0;
   }
-  
+
   if (context->language == NULL) {
     pl2a_errPrintf(error, PL2A_ERR_NO_LANG, cmd->sourceInfo, NULL,
-                  "no language loaded to execute user command");
+                   "no language loaded to execute user command");
     return 1;
   }
-  
+
   for (pl2a_SInvokeCmd *iter = context->language->sinvokeCmds;
-       iter != NULL && !PL2A_EMPTY_CMD(iter);
+       iter != NULL && !PL2A_EMPTY_SINVOKE_CMD(iter);
        ++iter) {
     if (!iter->removed && !strcmp(cmd->cmd, iter->cmdName)) {
       if (iter->deprecated) {
@@ -824,71 +884,79 @@ static _Bool cmdHandler(RunContext *context,
                 iter->cmdName);
       }
       if (iter->stub != NULL) {
-        iter->stub((const char **)cmd->args);
+        iter->stub((const char**)cmd->args);
       }
       context->curCmd = cmd->next;
       return 1;
     }
   }
-  
+
   for (pl2a_PCallCmd *iter = context->language->pCallCmds;
        iter != NULL && !PL2A_EMPTY_CMD(iter);
        ++iter) {
     if (!iter->removed && !strcmp(cmd->cmd, iter->cmdName)) {
-      if (iter->deprecated) {
-        fprintf(stderr, "[int/w] using deprecated command: %s\n",
-                iter->cmdName);
-      }
-      if (iter->stub == NULL) {
-        context->curCmd = cmd->next;
+      if (iter->cmdName != NULL
+          && strcmp(cmd->cmd, iter->cmdName) != 0) {
+        // Do nothing if so
+      } else if (iter->routerStub != NULL
+                 && !iter->routerStub(cmd->cmd)) {
+        // Do nothing if so
+      } else {
+        if (iter->deprecated) {
+          fprintf(stderr, "[int/w] using deprecated command: %s\n",
+                  iter->cmdName);
+        }
+        if (iter->stub == NULL) {
+          context->curCmd = cmd->next;
+          return 1;
+        }
+
+        pl2a_Cmd *nextCmd = iter->stub(context->program,
+                                       context->userContext,
+                                       cmd,
+                                       error);
+        if (pl2a_isError(error)) {
+          return 0;
+        }
+        if (nextCmd == context->language->termCmd) {
+          return 0;
+        }
+        context->curCmd = nextCmd ? nextCmd : cmd->next;
         return 1;
       }
-      
-      pl2a_Cmd *nextCmd = iter->stub(context->program,
-                                    context->userContext,
-                                    cmd,
-                                    error);
-      if (pl2a_isError(error)) {
-        return 0;
-      }
-      if (nextCmd == context->language->termCmd) {
-        return 0;
-      }
-      context->curCmd = nextCmd ? nextCmd : cmd->next;
-      return 1;
     }
   }
-  
+
   if (context->language->fallback == NULL) {
-    pl2a_errPrintf(error, PL2A_ERR_UNKNWON_CMD, cmd->sourceInfo, NULL,
+    pl2a_errPrintf(error, PL2A_ERR_UNKNOWN_CMD, cmd->sourceInfo, NULL,
                    "`%s` is not recognized as an internal or external "
                    "command, operable program or batch file",
                    cmd->cmd);
     return 0;
   }
-  
+
   pl2a_Cmd *nextCmd = context->language->fallback(
     context->program,
     context->userContext,
     cmd,
     error
   );
-  
+
   if (nextCmd == context->language->termCmd) {
-    pl2a_errPrintf(error, PL2A_ERR_UNKNWON_CMD, cmd->sourceInfo, NULL,
-                  "`%s` is not recognized as an internal or external "
-                  "command, operable program or batch file",
+    pl2a_errPrintf(error, PL2A_ERR_UNKNOWN_CMD, cmd->sourceInfo, NULL,
+                   "`%s` is not recognized as an internal or external "
+                   "command, operable program or batch file",
                    cmd->cmd);
     return 0;
   }
-  
+
   if (pl2a_isError(error)) {
     return 0;
   }
   if (nextCmd == context->language->termCmd) {
     return 0;
   }
-  
+
   context->curCmd = nextCmd ? nextCmd : cmd->next;
   return 1;
 }
@@ -898,7 +966,7 @@ static _Bool loadLanguage(RunContext *context,
                           pl2a_Error *error) {
   if (context->language != NULL) {
     pl2a_errPrintf(error, PL2A_ERR_LOAD_LANG, cmd->sourceInfo, NULL,
-                  "language: another language already loaded");
+                   "language: another language already loaded");
     return 0;
   }
 
@@ -909,13 +977,13 @@ static _Bool loadLanguage(RunContext *context,
                    argsLen - 1);
     return 0;
   }
-  
+
   const char *langId = cmd->args[0];
   pl2a_SemVer langVer = pl2a_parseSemVer(cmd->args[1], error);
   if (pl2a_isError(error)) {
     return 0;
   }
-  
+
   static char buffer[4096] = "./lib";
   strcat(buffer, langId);
   strcat(buffer, ".so");
@@ -930,14 +998,14 @@ static _Bool loadLanguage(RunContext *context,
       context->libHandle = dlopen(buffer, RTLD_NOW);
     }
   }
-  
+
   if (context->libHandle == NULL) {
     pl2a_errPrintf(error, PL2A_ERR_LOAD_LANG, cmd->sourceInfo, NULL,
-                  "language: cannot load language library `%s`: %s",
-                  langId, dlerror());
+                   "language: cannot load language library `%s`: %s",
+                   langId, dlerror());
     return 0;
   }
-  
+
   void *loadPtr = dlsym(
     context->libHandle,
     "pl2ext_loadLanguage"
@@ -947,18 +1015,20 @@ static _Bool loadLanguage(RunContext *context,
       context->libHandle,
       "pl2ezload"
     );
-    
+
     if (ezLoadPtr == NULL) {
       pl2a_errPrintf(error, PL2A_ERR_LOAD_LANG, cmd->sourceInfo, NULL,
-                  "language: cannot locate `%s` or `%s` on library `%s`:"
-                  " %s",
-                  "pl2ext_loadLanguage", "pl2ezload", langId, dlerror());
+                     "language: cannot locate `%s` or `%s` "
+                     "on library `%s`: %s",
+                     "pl2ext_loadLanguage", "pl2ezload", langId,
+                     dlerror());
       return 0;
     }
-    
+
     pl2a_EasyLoadLanguage *load = (pl2a_EasyLoadLanguage*)ezLoadPtr;
     context->language = ezLoad(context->libHandle, load(), error);
     if (pl2a_isError(error)) {
+      error->sourceInfo = cmd->sourceInfo;
       return 0;
     }
     context->ownLanguage = 1;
@@ -966,14 +1036,16 @@ static _Bool loadLanguage(RunContext *context,
     pl2a_LoadLanguage *load = (pl2a_LoadLanguage*)loadPtr;
     context->language = load(langVer, error);
     if (pl2a_isError(error)) {
+      error->sourceInfo = cmd->sourceInfo;
       return 0;
     }
     context->ownLanguage = 0;
   }
-  
+
   if (context->language != NULL && context->language->init != NULL) {
     context->userContext = context->language->init(error);
     if (pl2a_isError(error)) {
+      error->sourceInfo = cmd->sourceInfo;
       return 0;
     }
   }
@@ -983,8 +1055,8 @@ static _Bool loadLanguage(RunContext *context,
 }
 
 static pl2a_Language *ezLoad(void *libHandle,
-                            const char **cmdNames,
-                            pl2a_Error *error) {
+                             const char **cmdNames,
+                             pl2a_Error *error) {
   if (cmdNames == NULL || cmdNames[0] == NULL) {
     return NULL;
   }
@@ -992,8 +1064,16 @@ static pl2a_Language *ezLoad(void *libHandle,
   for (const char **iter = cmdNames; *iter != NULL; iter++) {
     ++count;
   }
-  
+
   pl2a_Language *ret = (pl2a_Language*)malloc(sizeof(pl2a_Language));
+  if (ret == NULL) {
+    pl2a_errPrintf(error, PL2A_ERR_MALLOC, pl2a_sourceInfo(NULL, 0),
+                   NULL,
+                   "language: ezload: "
+                   "cannot allocate memory for pl2a_Language");
+    return NULL;
+  }
+
   ret->langName = "unknown";
   ret->langInfo = "anonymous language loaded by ezload";
   ret->termCmd = NULL;
@@ -1004,13 +1084,31 @@ static pl2a_Language *ezLoad(void *libHandle,
   ret->sinvokeCmds = (pl2a_SInvokeCmd*)malloc(
     sizeof(pl2a_SInvokeCmd) * (count + 1)
   );
-  
+  if (ret->sinvokeCmds == NULL) {
+    pl2a_errPrintf(error, PL2A_ERR_MALLOC, pl2a_sourceInfo(NULL, 0),
+                   NULL,
+                   "langauge: ezload: "
+                   "cannot allocate memory for "
+                   "pl2a_Language->sinvokeCmds");
+    free(ret);
+    return NULL;
+  }
+
   memset(ret->sinvokeCmds, 0, (count + 1) * sizeof(pl2a_SInvokeCmd));
   static char nameBuffer[512];
   for (uint16_t i = 0; i < count; i++) {
     const char *cmdName = cmdNames[i];
+    if (strlen(cmdName) > 504) {
+      pl2a_errPrintf(error, PL2A_ERR_LOAD_LANG, pl2a_sourceInfo(NULL, 0),
+                     NULL,
+                     "language: ezload: "
+                     "name over 500 chars not supported");
+      free(ret->sinvokeCmds);
+      free(ret);
+      return NULL;
+    }
     strcpy(nameBuffer, "pl2ez_");
-    strcat(nameBuffer, cmdName);
+    strncat(nameBuffer, cmdName, 504);
     void *ptr = dlsym(libHandle, nameBuffer);
     if (ptr == NULL) {
       pl2a_errPrintf(error, PL2A_ERR_LOAD_LANG, pl2a_sourceInfo(NULL, 0),

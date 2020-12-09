@@ -16,18 +16,18 @@ int main(int argc, const char *argv[]) {
     PL2A_VER_MINOR,
     PL2A_VER_PATCH,
     PL2A_VER_POSTFIX);
-  
+
   if (argc != 2) {
     fprintf(stderr, "expected 1 argument, got %d\n", argc - 1);
     return -1;
   }
-  
+
   FILE *fp = fopen(argv[1], "r");
   if (fp == NULL) {
     fprintf(stderr, "cannot open input file %s\n", argv[1]);
     return -1;
   }
-  
+
   long fileSize = 0;
   if (fseek(fp, 0, SEEK_END) < 0) {
     fprintf(stderr, "cannot determine file size\n");
@@ -38,7 +38,7 @@ int main(int argc, const char *argv[]) {
     fprintf(stderr, "cannot determine file size\n");
     return -1;
   }
-  
+
   char *buffer = (char*)malloc((size_t)fileSize + 1);
   memset(buffer, 0, (size_t)fileSize + 1);
   rewind(fp);
@@ -46,9 +46,9 @@ int main(int argc, const char *argv[]) {
     fprintf(stderr, "cannot read file\n");
     return -1;
   }
-  
+
   pl2a_Error *error = pl2a_errorBuffer(512);
-  pl2a_Program program = pl2a_parse(buffer, error);
+  pl2a_Program program = pl2a_parse(buffer, 512, error);
   if (pl2a_isError(error)) {
     fprintf(stderr,
             "parsing error %d: line %d: %s\n",
@@ -68,11 +68,11 @@ int main(int argc, const char *argv[]) {
             error->reason);
     ret = -1;
   }
-  
+
   pl2a_dropProgram(&program);
   pl2a_dropError(error);
   free(buffer);
   fclose(fp);
-  
+
   return ret;
 }
