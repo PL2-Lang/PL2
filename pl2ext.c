@@ -80,7 +80,7 @@ const char *pl2ext_startsWith(const char *src, const char *prefix) {
   }
 }
 
-/*** ----------------------------- NaCl ---------------------------- ***/
+/*** ----------------------- Argumens Helper ----------------------- ***/
 
 uint16_t pl2ext_argLen(const char **args) {
   assert(args != NULL);
@@ -104,8 +104,8 @@ _Bool pl2ext_checkArgsLen(const char **args,
 
 typedef struct st_bound_int {
   ELEMENT_COMMON
-  int64_t lowerBound;
-  int64_t upperBound;
+  int32_t lowerBound;
+  int32_t upperBound;
 } BoundInt;
 
 typedef struct st_user_char {
@@ -162,3 +162,91 @@ nacl_ElementBase *nacl_number(uint16_t id) {
   }
   return base;
 }
+
+nacl_ElementBase *nacl_bool(uint16_t id) {
+  nacl_ElementBase *base
+    = (nacl_ElementBase*)malloc(sizeof(nacl_ElementBase));
+  if (base != NULL) {
+    base->elementType = NACL_BOOL;
+    base->elementId = id;
+  }
+  return base;
+}
+
+nacl_ElementBase *nacl_boundInt(uint16_t id,
+                                int32_t lowerBound,
+                                int32_t upperBound) {
+  BoundInt *boundInt = (BoundInt*)malloc(sizeof(BoundInt));
+  if (boundInt != NULL) {
+    boundInt->elementType = NACL_BOUND_INT;
+    boundInt->elementId = id;
+    boundInt->lowerBound = lowerBound;
+    boundInt->upperBound = upperBound;
+  }
+  return (nacl_ElementBase*)boundInt;
+}
+
+nacl_ElementBase *nacl_userChar(uint16_t id, char ch) {
+  UserChar *userChar = (UserChar*)malloc(sizeof(UserChar));
+  if (userChar != NULL) {
+    userChar->elementType = NACL_USER_CHAR;
+    userChar->elementId = id;
+    userChar->userChar = ch;
+  }
+  return (nacl_ElementBase*)userChar;
+}
+
+nacl_ElementBase *nacl_userString(uint16_t id, const char *str) {
+  UserStr *userStr = (UserStr*)malloc(sizeof(UserStr));
+  if (userStr != NULL) {
+    userStr->elementType = NACL_USER_STR;
+    userStr->elementId = id;
+    userStr->userStr = str;
+  }
+  return (nacl_ElementBase*)userStr;
+}
+
+nacl_ElementBase *nacl_userFunc(uint16_t id, nacl_UserFuncStub *stub) {
+  UserFunc *userFunc = (UserFunc*)malloc(sizeof(UserFunc));
+  if (userFunc != NULL) {
+    userFunc->elementType = NACL_USER_FUNC;
+    userFunc->elementId = id;
+    userFunc->stub = stub;
+  }
+  return (nacl_ElementBase*)userFunc;
+}
+
+nacl_ElementBase *nacl_optional(uint16_t id, nacl_ElementBase *base) {
+  Optional *optional = (Optional*)malloc(sizeof(Optional));
+  if (optional != NULL) {
+    optional->elementType = NACL_OPTIONAL;
+    optional->elementId = id;
+    optional->base = base;
+  }
+  return (nacl_ElementBase*)optional;
+}
+
+nacl_ElementBase *nacl_repeated(uint16_t id, nacl_ElementBase *base) {
+  Repeated *repeated = (Repeated*)malloc(sizeof(Repeated));
+  if (repeated != NULL) {
+    repeated->elementType = NACL_REPEATED;
+    repeated->elementId = id;
+    repeated->base = base;
+  }
+  return (nacl_ElementBase*)repeated;
+}
+
+nacl_ElementBase *nacl_sum(uint16_t id, nacl_ElementBase *subElements[]) {
+  // TODO implement this function
+  (void)id;
+  (void)subElements;
+  return NULL;
+}
+
+nacl_ElementBase *nacl_product(uint16_t id, nacl_ElementBase *subElements[]) {
+  // TODO implement this function
+  (void)id;
+  (void)subElements;
+  return NULL;
+}
+

@@ -63,8 +63,8 @@ nacl_ElementBase *nacl_int(uint16_t id);
 nacl_ElementBase *nacl_number(uint16_t id);
 nacl_ElementBase *nacl_bool(uint16_t id);
 nacl_ElementBase *nacl_boundInt(uint16_t id,
-                                uint64_t lowerBound,
-                                uint64_t upperBound);
+                                int32_t lowerBound,
+                                int32_t upperBound);
 nacl_ElementBase *nacl_userChar(uint16_t id, char ch);
 nacl_ElementBase *nacl_userString(uint16_t id, const char *str);
 nacl_ElementBase *nacl_userFunc(uint16_t id, nacl_UserFuncStub *stub);
@@ -74,6 +74,13 @@ nacl_ElementBase *nacl_sum(uint16_t id,
                            nacl_ElementBase *subElements[]);
 nacl_ElementBase *nacl_product(uint16_t id,
                                nacl_ElementBase *subElements[]);
+void nacl_free(nacl_ElementBase *tree);
+
+typedef struct st_nacl_match {
+  uint16_t elementId;
+  uint16_t elementType;
+  nacl_Slice matchedSlice;
+} nacl_Match;
 
 #ifdef __cplusplus
 } // extern "C"
