@@ -55,8 +55,6 @@ typedef struct st_nacl_element_base {
   uint16_t elementId;
 } nacl_ElementBase;
 
-const nacl_ElementBase NACL_SENTRY = {0, 0};
-
 typedef const char* (nacl_UserFuncStub)(const char *src);
 
 nacl_ElementBase *nacl_int(uint16_t id);
@@ -70,10 +68,8 @@ nacl_ElementBase *nacl_userString(uint16_t id, const char *str);
 nacl_ElementBase *nacl_userFunc(uint16_t id, nacl_UserFuncStub *stub);
 nacl_ElementBase *nacl_optional(uint16_t id, nacl_ElementBase *base);
 nacl_ElementBase *nacl_repeated(uint16_t id, nacl_ElementBase *base);
-nacl_ElementBase *nacl_sum(uint16_t id,
-                           nacl_ElementBase *subElements[]);
-nacl_ElementBase *nacl_product(uint16_t id,
-                               nacl_ElementBase *subElements[]);
+nacl_ElementBase *nacl_sum(uint16_t id, ...);
+nacl_ElementBase *nacl_product(uint16_t id, ...);
 void nacl_free(nacl_ElementBase *tree);
 
 typedef struct st_nacl_match {
@@ -87,3 +83,4 @@ typedef struct st_nacl_match {
 #endif
 
 #endif // PL2EXT_H
+

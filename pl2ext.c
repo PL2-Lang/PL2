@@ -1,6 +1,7 @@
 #include "pl2ext.h"
 
 #include <assert.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,7 +81,7 @@ const char *pl2ext_startsWith(const char *src, const char *prefix) {
   }
 }
 
-/*** ----------------------- Argumens Helper ----------------------- ***/
+/*** ----------------------- Arguments Helper ---------------------- ***/
 
 uint16_t pl2ext_argLen(const char **args) {
   assert(args != NULL);
@@ -142,6 +143,9 @@ typedef struct st_product {
   ELEMENT_COMMON
   nacl_ElementBase *subElements[0];
 } Product;
+
+static uint16_t elementListLen(nacl_ElementBase *list[]);
+static uint16_t elementVAListLen(va_list ap);
 
 nacl_ElementBase *nacl_int(uint16_t id) {
   nacl_ElementBase *base
@@ -236,17 +240,104 @@ nacl_ElementBase *nacl_repeated(uint16_t id, nacl_ElementBase *base) {
   return (nacl_ElementBase*)repeated;
 }
 
-nacl_ElementBase *nacl_sum(uint16_t id, nacl_ElementBase *subElements[]) {
-  // TODO implement this function
-  (void)id;
-  (void)subElements;
-  return NULL;
+nacl_ElementBase *nacl_sum(uint16_t id, ...) {
+  va_list va;
+  va_start(va, id);
+  
+  va_list va1;
+  va_copy(va1, va);
+  uint16_t len = elementVAListLen(va1);
+
+  Sum *sum = (Sum*)malloc(
+    sizeof(Sum) + (len + 1) * sizeof(nacl_ElementBase*)
+  );
+  if (sum != NULL) {
+    sum->elementType = NACL_SUM;
+    sum->elementId = id;
+    for (uint16_t i = 0; i < len; i++) {
+      sum->subElements[i] = va_arg(va, nacl_ElementBase*);
+    }
+    sum->subElements[len] = NULL;
+  }
+  return (nacl_ElementBase*)sum;
 }
 
-nacl_ElementBase *nacl_product(uint16_t id, nacl_ElementBase *subElements[]) {
-  // TODO implement this function
-  (void)id;
-  (void)subElements;
-  return NULL;
+nacl_ElementBase *nacl_product(uint16_t id, ...) {
+  va_list va;
+  va_start(va, id);
+
+  va_list va1;
+  va_copy(va1, va);
+  uint16_t len = elementVAListLen(va1);
+  
+  Product *product = (Product*)malloc(
+    sizeof(Product) * (len + 1) * sizeof(nacl_ElementBase*)
+  );
+  if (product != NULL) {
+    product->elementType = NACL_PRODUCT;
+    product->elementId = id;
+    for (uint16_t i = 0; i < len; i++) {
+      product->subElements[i] = va_arg(va, nacl_ElementBase*);
+    }
+    product->subElements[len] = NULL;
+  }
+  return (nacl_ElementBase*)product;
+}
+
+void nacl_free(nacl_ElementBase *tree) {
+  switch (tree->elementType) {
+  case NACL_OPTIONAL:
+    {
+      Optional *optional = (Optional*)tree;
+      nacl_free(optional->base);
+      free(optional);
+      break;
+    }
+  case NACL_REPEATED:
+    {
+      Repeated *repeated = (Repeated*)tree;
+      nacl_free(repeated->base);
+      free(repeated);
+      break;
+    }
+  case NACL_SUM:
+    {
+      Sum *sum = (Sum*)tree;
+      for (uint16_t i = 0; sum->subElements[i] != NULL; i++) {
+        nacl_free(sum->subElements[i]);
+      }
+      free(sum);
+      break;
+    }
+  case NACL_PRODUCT:
+    {
+      Product *product = (Product*)tree;
+      for (uint16_t i = 0; product->subElements[i] != NULL; i++) {
+        nacl_free(product->subElements[i]);
+      }
+      free(product);
+      break;
+    }
+  default:
+    free(tree);
+  }
+}
+
+static uint16_t elementListLen(nacl_ElementBase *list[]) {
+  uint16_t len = 0;
+  for (; len < UINT16_MAX - 1 && list[len] != NULL; len++);
+  return len;
+}
+
+static uint16_t elementVAListLen(va_list ap) {
+  uint16_t len = 0;
+  for (; len < UINT16_MAX - 1; len++) {
+    nacl_ElementBase *thisElem = va_arg(ap, nacl_ElementBase*);
+    if (thisElem == NULL) {
+      va_end(ap);
+      break;
+    }
+  }
+  return len;
 }
 
