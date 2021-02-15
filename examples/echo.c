@@ -32,7 +32,7 @@ pl2a_Language* pl2ext_loadLanguage(pl2a_SemVer version, pl2a_Error *error) {
 }
 
 static void echo_1_0_0(const char *args[]) {
-  for (const char **arg = args + 1; *arg != NULL; ++arg) {
+  for (const char **arg = args; *arg != NULL; ++arg) {
     printf("%s ", *arg);
   }
   putchar('\n');
