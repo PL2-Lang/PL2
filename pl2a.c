@@ -272,6 +272,9 @@ pl2a_Program pl2a_parse(char *source,
                         uint16_t parseBufferSize,
                         pl2a_Error *error) {
   ParseContext *context = createParseContext(source, parseBufferSize);
+  if (context == NULL) {
+    return NULL;
+  }
 
   while (curChar(context) != '\0') {
     parseLine(context, error);
@@ -287,6 +290,10 @@ pl2a_Program pl2a_parse(char *source,
 
 static ParseContext *createParseContext(char *src,
                                         uint16_t parseBufferSize) {
+  if (parseBufferSize == 0) {
+    return NULL;
+  }
+
   ParseContext *ret = (ParseContext*)malloc(
     sizeof(ParseContext) + parseBufferSize * sizeof(Slice)
   );
