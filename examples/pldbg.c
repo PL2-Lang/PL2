@@ -25,7 +25,6 @@ pl2b_Language *pl2ext_loadLanguage(pl2b_SemVer version,
     /*init        = */ NULL,
     /*atExit      = */ NULL,
     /*cmdCleanup  = */ NULL,
-    /*sinvokeCmds = */ NULL,
     /*pCallCmds   = */ NULL,
     /*fallback    = */ pldbg_fallback
   };
