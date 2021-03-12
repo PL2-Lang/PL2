@@ -95,21 +95,15 @@ pl2b_CmdPart pl2b_cmdPart(char *str, _Bool isString);
 
 #define PL2B_EMPTY_PART(cmdPart) (!((cmdPart).str))
 
-typedef struct st_pl2b_cmd_cache {
-  _Bool hasCache;
-  void *funcPtr;
-} pl2b_CmdCache;
-
 typedef struct st_pl2b_cmd {
   struct st_pl2b_cmd *prev;
   struct st_pl2b_cmd *next;
 
   void *extraData;
+  void *resolveCache;
   pl2b_SourceInfo sourceInfo;
   pl2b_CmdPart cmd;
   pl2b_CmdPart args[0];
-
-  pl2b_CmdCache cache;
 } pl2b_Cmd;
 
 pl2b_Cmd *pl2b_cmd3(pl2b_SourceInfo sourceInfo,

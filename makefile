@@ -1,5 +1,5 @@
 PREFIX ?= /usr
-CFLAGS := $(CFLAGS) -Wall -Wextra -Wc++-compat
+CFLAGS := $(CFLAGS) -Wall -Wextra -Wc++-compat -g
 
 LOG := sh -c 'printf "\\t$$0\\t$$1\\n"'
 

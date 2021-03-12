@@ -171,6 +171,7 @@ pl2b_Cmd *pl2b_cmd6(pl2b_Cmd *prev,
   }
   ret->sourceInfo = sourceInfo;
   ret->cmd = cmd;
+  ret->resolveCache = NULL;
   ret->extraData = extraData;
   for (uint16_t i = 0; i < argLen; i++) {
     ret->args[i] = args[i];
@@ -498,7 +499,7 @@ static pl2b_Cmd *cmdFromSlices5(pl2b_Cmd *prev,
   for (; !isNullSlice(parts[partCount].slice); ++partCount);
 
   pl2b_Cmd *ret = (pl2b_Cmd*)malloc(sizeof(pl2b_Cmd) +
-                                    partCount * sizeof(char*));
+                                    partCount * sizeof(pl2b_CmdPart));
   if (ret == NULL) {
     return NULL;
   }
@@ -728,7 +729,8 @@ _Bool pl2b_isCompatible(pl2b_SemVer expected, pl2b_SemVer actual) {
            && expected.minor == actual.minor
            && expected.patch == actual.patch;
   } else if (expected.major == actual.major) {
-    return (expected.minor == actual.minor && expected.patch < actual.patch)
+    return (expected.minor == actual.minor
+              && expected.patch < actual.patch)
             || (expected.minor < actual.minor);
   } else {
     return 0;
@@ -905,8 +907,8 @@ static _Bool cmdHandler(RunContext *context,
     return 1;
   }
 
-  if (cmd->cache.hasCache) {
-    pl2b_PCallCmdStub *stub = (pl2b_PCallCmdStub*)cmd->cache.funcPtr;
+  if (cmd->resolveCache) {
+    pl2b_PCallCmdStub *stub = (pl2b_PCallCmdStub*)cmd->resolveCache;
     if (stub == NULL) {
       context->curCmd = cmd->next;
       return 1;
@@ -932,8 +934,7 @@ static _Bool cmdHandler(RunContext *context,
                   iter->cmdName);
         }
 
-        cmd->cache.hasCache = 1;
-        cmd->cache.funcPtr = iter->stub;
+        cmd->resolveCache = iter->stub;
 
         if (iter->stub == NULL) {
           context->curCmd = cmd->next;
