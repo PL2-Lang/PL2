@@ -879,6 +879,13 @@ static void destroyRunContext(RunContext *context) {
       if (context->language->atExit != NULL) {
         context->language->atExit(context->userContext);
       }
+      if (context->language->cmdCleanup != NULL) {
+        for (pl2b_Cmd *cmd = context->program->commands;
+             cmd != NULL;
+             cmd = cmd->next) {
+          context->language->cmdCleanup(cmd->extraData);
+        }
+      }
       context->language = NULL;
     }
     if (dlclose(context->libHandle) != 0) {

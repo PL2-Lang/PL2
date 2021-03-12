@@ -340,4 +340,3 @@ static uint16_t elementVAListLen(va_list ap) {
   }
   return len;
 }
-

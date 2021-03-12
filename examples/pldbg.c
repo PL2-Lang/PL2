@@ -10,7 +10,8 @@ pldbg_fallback(pl2b_Program *program,
                pl2b_Cmd *cmd,
                pl2b_Error *error);
 
-pl2b_Language *pl2ext_loadLanguage(pl2b_SemVer version, pl2b_Error *error) {
+pl2b_Language *pl2ext_loadLanguage(pl2b_SemVer version,
+                                   pl2b_Error *error) {
   (void)version;
   (void)error;
 
@@ -23,6 +24,7 @@ pl2b_Language *pl2ext_loadLanguage(pl2b_SemVer version, pl2b_Error *error) {
 
     /*init        = */ NULL,
     /*atExit      = */ NULL,
+    /*cmdCleanup  = */ NULL,
     /*sinvokeCmds = */ NULL,
     /*pCallCmds   = */ NULL,
     /*fallback    = */ pldbg_fallback
