@@ -182,8 +182,6 @@ typedef struct st_pl2b_langauge {
   const char *langName;
   const char *langInfo;
 
-  pl2b_Cmd *termCmd;
-
   pl2b_InitStub *init;
   pl2b_AtexitStub *atExit;
   pl2b_CmdCleanupStub *cmdCleanup;

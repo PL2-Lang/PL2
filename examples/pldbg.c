@@ -20,7 +20,6 @@ pl2b_Language *pl2ext_loadLanguage(pl2b_SemVer version,
   static pl2b_Language ret = {
     /*langName    = */ "PL2 external debugger",
     /*langInfo    = */ "this language will display intaking commands",
-    /*termCmd     = */ &termCmd,
 
     /*init        = */ NULL,
     /*atExit      = */ NULL,
@@ -55,5 +54,5 @@ static pl2b_Cmd *pldbg_fallback(pl2b_Program *program,
     }
   }
   fputc('\n', stderr);
-  return NULL;
+  return cmd->next;
 }

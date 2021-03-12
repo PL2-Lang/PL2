@@ -835,7 +835,6 @@ static _Bool cmdHandler(RunContext *context,
                         pl2b_Cmd *cmd,
                         pl2b_Error *error);
 static _Bool checkNextCmdRet(RunContext *context,
-                             pl2b_Cmd *cmd,
                              pl2b_Cmd *nextCmd,
                              pl2b_Error *error);
 static _Bool loadLanguage(RunContext *context,
@@ -922,7 +921,7 @@ static _Bool cmdHandler(RunContext *context,
     }
     pl2b_Cmd *nextCmd =
       stub(context->program, context->userContext, cmd, error);
-    return checkNextCmdRet(context, cmd, nextCmd, error);
+    return checkNextCmdRet(context, nextCmd, error);
   }
 
   for (pl2b_PCallCmd *iter = context->language->pCallCmds;
@@ -944,6 +943,9 @@ static _Bool cmdHandler(RunContext *context,
         cmd->resolveCache = iter->stub;
 
         if (iter->stub == NULL) {
+          fprintf(stderr,
+                  "[int/w] entry for command %s exists but NULL\n",
+                  cmd->cmd.str);
           context->curCmd = cmd->next;
           return 1;
         }
@@ -952,7 +954,7 @@ static _Bool cmdHandler(RunContext *context,
                                        context->userContext,
                                        cmd,
                                        error);
-        return checkNextCmdRet(context, cmd, nextCmd, error);
+        return checkNextCmdRet(context, nextCmd, error);
       }
     }
   }
@@ -972,29 +974,20 @@ static _Bool cmdHandler(RunContext *context,
     error
   );
 
-  return checkNextCmdRet(context, cmd, nextCmd, error);
+  return checkNextCmdRet(context, nextCmd, error);
 }
 
 static _Bool checkNextCmdRet(RunContext *context,
-                             pl2b_Cmd *cmd,
                              pl2b_Cmd *nextCmd,
                              pl2b_Error *error) {
-  if (nextCmd == context->language->termCmd) {
-    pl2b_errPrintf(error, PL2B_ERR_UNKNOWN_CMD, cmd->sourceInfo, NULL,
-                   "`%s` is not recognized as an internal or external "
-                   "command, operable program or batch file",
-                   cmd->cmd);
-    return 0;
-  }
-
   if (pl2b_isError(error)) {
     return 0;
   }
-  if (nextCmd == context->language->termCmd) {
+  if (nextCmd == NULL) {
     return 0;
   }
 
-  context->curCmd = nextCmd ? nextCmd : cmd->next;
+  context->curCmd = nextCmd;
   return 1;
 }
 
