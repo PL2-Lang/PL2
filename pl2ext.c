@@ -243,7 +243,7 @@ nacl_ElementBase *nacl_repeated(uint16_t id, nacl_ElementBase *base) {
 nacl_ElementBase *nacl_sum(uint16_t id, ...) {
   va_list va;
   va_start(va, id);
-  
+
   va_list va1;
   va_copy(va1, va);
   uint16_t len = elementVAListLen(va1);
@@ -269,7 +269,7 @@ nacl_ElementBase *nacl_product(uint16_t id, ...) {
   va_list va1;
   va_copy(va1, va);
   uint16_t len = elementVAListLen(va1);
-  
+
   Product *product = (Product*)malloc(
     sizeof(Product) * (len + 1) * sizeof(nacl_ElementBase*)
   );

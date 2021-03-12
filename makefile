@@ -3,31 +3,15 @@ CFLAGS := $(CFLAGS) -Wall -Wextra -Wc++-compat
 
 LOG := sh -c 'printf "\\t$$0\\t$$1\\n"'
 
-all: libpl2a.so libpl2ext.so pl2a
+all: libpl2b.so libpl2ext.so pl2b
 
-examples: libecho.so libpldbg.so libezecho.so
+examples: libpldbg.so
 
-libezecho.so: ezecho.o
-	@$(LOG) LINK libezecho.so
-	@$(CC) ezecho.o -shared -o libezecho.so
+libpldbg.so: pldbg.o libpl2b.so
+	@$(LOG) LINK libpl2b.so
+	@$(CC) pldbg.o -L. -lpl2b -shared -o libpldbg.so
 
-ezecho.o: examples/ezecho.c
-	@$(LOG) CC examples/ezecho.c
-	@$(CC) $(CFLAGS) examples/ezecho.c -I. -c -fPIC -o ezecho.o
-
-libecho.so: echo.o libpl2a.so
-	@$(LOG) LINK libecho.so
-	@$(CC) echo.o -L. -lpl2a -shared -o libecho.so
-
-echo.o: examples/echo.c pl2a.h
-	@$(LOG) CC examples/echo.c
-	@$(CC) $(CFLAGS) examples/echo.c -I. -c -fPIC -o echo.o
-
-libpldbg.so: pldbg.o libpl2a.so
-	@$(LOG) LINK libpl2a.so
-	@$(CC) pldbg.o -L. -lpl2a -shared -o libpldbg.so
-
-pldbg.o: examples/pldbg.c pl2a.h
+pldbg.o: examples/pldbg.c pl2b.h
 	@$(LOG) CC examples/pldbg.c
 	@$(CC) $(CFLAGS) examples/pldbg.c -I. -c -fPIC -o pldbg.o
 
@@ -35,48 +19,48 @@ libpl2ext.so: pl2ext.o
 	@$(LOG) LINK libpl2ext.so
 	@$(CC) pl2ext.o -shared -o libpl2ext.so
 
-pl2a: main.o libpl2a.so
-	@$(LOG) LINK pl2a
-	@$(CC) main.o -L. -lpl2a -ldl -o pl2a
+pl2b: main.o libpl2b.so
+	@$(LOG) LINK pl2b
+	@$(CC) main.o -L. -lpl2b -ldl -o pl2b
 
-main.o: pl2a.h main.c
-	@$(LOG) CC pl2a.c
+main.o: pl2b.h main.c
+	@$(LOG) CC pl2b.c
 	@$(CC) $(CFLAGS) main.c -c -fPIC -o main.o
 
-libpl2a.so: pl2a.o
-	@$(LOG) LINK libpl2a.so
-	@$(CC) pl2a.o -shared -o libpl2a.so
+libpl2b.so: pl2b.o
+	@$(LOG) LINK libpl2b.so
+	@$(CC) pl2b.o -shared -o libpl2b.so
 
 pl2ext.o: pl2ext.h pl2ext.c
 	@$(LOG) CC pl2ext.c
 	@$(CC) $(CFLAGS) pl2ext.c -c -fPIC -o pl2ext.o
 
-pl2a.o: pl2a.c pl2a.h
-	@$(LOG) CC pl2a.c
-	@$(CC) $(CFLAGS) pl2a.c -c -fPIC -ldl -o pl2a.o
+pl2b.o: pl2b.c pl2b.h
+	@$(LOG) CC pl2b.c
+	@$(CC) $(CFLAGS) pl2b.c -c -fPIC -ldl -o pl2b.o
 
 .PHONY: reinstall install uninstall clean
 
 reinstall: uninstall install
 
-install: pl2a.h pl2a libpl2a.so libpl2ext.so
+install: pl2b.h pl2b libpl2b.so libpl2ext.so
 	@$(LOG) MKDIR $(PREFIX)/bin
 	@mkdir -p $(PREFIX)/bin
 	@$(LOG) MKDIR $(PREFIX)/include
 	@mkdir -p $(PREFIX)/include
 	@$(LOG) MKDIR $(PREFIX)/lib
 	@mkdir -p $(PREFIX)/lib
-	@if [ -f $(PREFIX)/bin/pl2a ]; then \
-		echo $(PREFIX)/bin/pl2a already exists, skipping; \
+	@if [ -f $(PREFIX)/bin/pl2b ]; then \
+		echo $(PREFIX)/bin/pl2b already exists, skipping; \
 	else \
-		$(LOG) CP $(PREFIX)/bin/pl2a; \
-		cp pl2a $(PREFIX)/bin; \
+		$(LOG) CP $(PREFIX)/bin/pl2b; \
+		cp pl2b $(PREFIX)/bin; \
 	fi;
-	@if [ -f $(PREFIX)/lib/libpl2a.so ]; then \
-		echo $(PREFIX)/bin/libpl2a.so already exists, skipping; \
+	@if [ -f $(PREFIX)/lib/libpl2b.so ]; then \
+		echo $(PREFIX)/bin/libpl2b.so already exists, skipping; \
 	else \
-		$(LOG) CP $(PREFIX)/lib/libpl2a.so; \
-		cp libpl2a.so $(PREFIX)/lib; \
+		$(LOG) CP $(PREFIX)/lib/libpl2b.so; \
+		cp libpl2b.so $(PREFIX)/lib; \
 	fi;
 	@if [ -f $(PREFIX)/lib/libpl2ext.so ]; then \
 		echo $(PREFIX)/bin/libpl2ext.so already exists, skipping; \
@@ -84,20 +68,20 @@ install: pl2a.h pl2a libpl2a.so libpl2ext.so
 		$(LOG) CP $(PREFIX)/lib/libpl2ext.so; \
 		cp libpl2ext.so $(PREFIX)/lib; \
 	fi;
-	@if [ -f $(PREFIX)/include/pl2a.h ]; then \
-		echo $(PREFIX)/include/pl2a.h already exists, skipping; \
+	@if [ -f $(PREFIX)/include/pl2b.h ]; then \
+		echo $(PREFIX)/include/pl2b.h already exists, skipping; \
 	else \@echo
-		$(LOG) CP $(PREFIX)/include/pl2a.h; \
-		cp pl2a.h $(PREFIX)/include; \
+		$(LOG) CP $(PREFIX)/include/pl2b.h; \
+		cp pl2b.h $(PREFIX)/include; \
 	fi;
 
 uninstall:
-	@$(LOG) RM $(PREFIX)/bin/pl2a
-	@rm -f $(PREFIX)/bin/pl2a
-	@$(LOG) RM $(PREFIX)/include/pl2a.h
-	@rm -f $(PREFIX)/include/pl2a.h
-	@$(LOG) RM $(PREFIX)/lib/libpl2a.so
-	@rm -f $(PREFIX)/lib/libpl2a.so
+	@$(LOG) RM $(PREFIX)/bin/pl2b
+	@rm -f $(PREFIX)/bin/pl2b
+	@$(LOG) RM $(PREFIX)/include/pl2b.h
+	@rm -f $(PREFIX)/include/pl2b.h
+	@$(LOG) RM $(PREFIX)/lib/libpl2b.so
+	@rm -f $(PREFIX)/lib/libpl2b.so
 	@$(LOG) RM $(PREFIX)/lib/libpl2ext.so
 	@rm -f $(PREFIX)/lib/libpl2ext.so
 
@@ -112,5 +96,5 @@ clean:
 	@rm -f *.lib
 	@$(LOG) RM *.dll
 	@rm -f *.dll
-	@$(LOG) RM pl2a
-	@rm -f pl2a
+	@$(LOG) RM pl2b
+	@rm -f pl2b

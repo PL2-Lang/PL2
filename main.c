@@ -1,10 +1,10 @@
-#include "pl2a.h"
+#include "pl2b.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 int main(int argc, const char *argv[]) {
-  fprintf(stderr, 
+  fprintf(stderr,
     "PL2 programming language platform\n"
     "  Author:  ICEY<icey@icey.tech>\n"
     "  Edition: %s (%s)\n"
@@ -12,10 +12,10 @@ int main(int argc, const char *argv[]) {
     "  License: LDWPL (Limited Derivative Work Public License)\n\n",
     PL2_EDITION,
     PL2_EDITION_CN,
-    PL2A_VER_MAJOR,
-    PL2A_VER_MINOR,
-    PL2A_VER_PATCH,
-    PL2A_VER_POSTFIX);
+    PL2B_VER_MAJOR,
+    PL2B_VER_MINOR,
+    PL2B_VER_PATCH,
+    PL2B_VER_POSTFIX);
 
   if (argc != 2) {
     fprintf(stderr, "expected 1 argument, got %d\n", argc - 1);
@@ -47,9 +47,9 @@ int main(int argc, const char *argv[]) {
     return -1;
   }
 
-  pl2a_Error *error = pl2a_errorBuffer(512);
-  pl2a_Program program = pl2a_parse(buffer, 512, error);
-  if (pl2a_isError(error)) {
+  pl2b_Error *error = pl2b_errorBuffer(512);
+  pl2b_Program program = pl2b_parse(buffer, 512, error);
+  if (pl2b_isError(error)) {
     fprintf(stderr,
             "parsing error %d: line %d: %s\n",
             error->errorCode,
@@ -59,9 +59,9 @@ int main(int argc, const char *argv[]) {
   }
 
   int ret = 0;
-  pl2a_run(&program, error);
-  if (pl2a_isError(error)) {
-    fprintf(stderr, 
+  pl2b_run(&program, error);
+  if (pl2b_isError(error)) {
+    fprintf(stderr,
             "runtime error %d: line %d: %s\n",
             error->errorCode,
             error->sourceInfo.line,
@@ -69,8 +69,8 @@ int main(int argc, const char *argv[]) {
     ret = -1;
   }
 
-  pl2a_dropProgram(&program);
-  pl2a_dropError(error);
+  pl2b_dropProgram(&program);
+  pl2b_dropError(error);
   free(buffer);
   fclose(fp);
 
