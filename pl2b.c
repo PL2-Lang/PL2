@@ -498,8 +498,8 @@ static pl2b_Cmd *cmdFromSlices5(pl2b_Cmd *prev,
   uint16_t partCount = 0;
   for (; !isNullSlice(parts[partCount].slice); ++partCount);
 
-  pl2b_Cmd *ret = (pl2b_Cmd*)malloc(sizeof(pl2b_Cmd) +
-                                    partCount * sizeof(pl2b_CmdPart));
+  pl2b_Cmd *ret = (pl2b_Cmd*)malloc(sizeof(pl2b_Cmd)
+                                    + partCount * sizeof(pl2b_CmdPart));
   if (ret == NULL) {
     return NULL;
   }
@@ -513,6 +513,7 @@ static pl2b_Cmd *cmdFromSlices5(pl2b_Cmd *prev,
     next->prev = ret;
   }
   ret->extraData = extraData;
+  ret->resolveCache = NULL;
   ret->sourceInfo = sourceInfo;
   ret->cmd = pl2b_cmdPart(sliceIntoCStr(parts[0].slice),
                           parts[0].isString);
