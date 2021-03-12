@@ -46,7 +46,7 @@ static pl2b_Cmd *pldbg_fallback(pl2b_Program *program,
     fprintf(stderr, "%s\t", cmd->cmd.str);
   }
 
-  for (pl2b_CmdPart *arg = cmd->args; PL2B_EMPTY_PART(*arg); arg++) {
+  for (pl2b_CmdPart *arg = cmd->args; !PL2B_EMPTY_PART(*arg); arg++) {
     if (arg->isString) {
       fprintf(stderr, "\"%s\"\t", arg->str);
     } else {

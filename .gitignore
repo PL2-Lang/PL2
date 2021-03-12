@@ -1,7 +1,9 @@
 *.h.gch
 *.o
 pl2a
+pl2b
 pl2a.exe
+pl2b.exe
 *.so
 *.a
 *.lib
